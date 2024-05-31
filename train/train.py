@@ -33,6 +33,16 @@ if you are resuming a previosuly run experiment""",
     help="""A run is supposed to be a sub-class of an experiment.
 So this variable should be specified accordingly""",
 )
+@click.option(
+    "--model_type",
+    type=click.Choice(
+        [
+            "dragon"
+        ],
+        case_sensitive=False,
+    ),
+    default="dragon",
+)
 @click.option("--model_state", type=click.Path(exists=True), default=None)
 @click.option("--data_dir", type=click.Path(exists=True), required=True)
 @click.option(

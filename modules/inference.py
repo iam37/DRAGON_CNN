@@ -25,8 +25,7 @@ def predict(
     parallel=False,
     batch_size=256,
     n_workers=1,
-    model_type="ggt",
-    n_out=1,
+    model_type="dragon",
     mc_dropout=False,
     dropout_rate=None,
 ):
@@ -41,7 +40,6 @@ def predict(
     model_args = {
         "cutout_size": cutout_size,
         "channels": channels,
-        "n_out": n_out,
     }
 
     if "drp" in model_type.split("_"):
@@ -91,17 +89,11 @@ def predict(
     "--model_type",
     type=click.Choice(
         [
-            "ggt",
-            "vgg16",
-            "ggt_no_gconv",
-            "vgg16_w_stn",
-            "vgg16_w_stn_drp",
-            "vgg16_w_stn_at_drp",
-            "vgg16_w_stn_oc_drp",
+            "dragon"
         ],
         case_sensitive=False,
     ),
-    default="vgg16_w_stn_oc_drp",
+    default="dragon",
 )
 @click.option("--model_path", type=click.Path(exists=True), required=True)
 @click.option("--output_path", type=click.Path(writable=True), required=True)
@@ -121,18 +113,6 @@ def predict(
     default=True,
     help="""The normalize argument controls whether or not, the
               loaded images will be normalized using the arsinh function""",
-)
-@click.option(
-    "--label_scaling",
-    type=str,
-    default="std",
-    help="""The label scaling option controls whether to
-standardize the labels or not. Set this to std for sklearn's
-StandardScaling() and minmax for sklearn's MinMaxScaler().
-This is especially important when predicting multiple
-outputs. Note that you should pass the same argument for
-label_scaling as was used during the training phase (of the
-model being used for inference).""",
 )
 @click.option("--batch_size", type=int, default=256)
 @click.option(
@@ -156,12 +136,6 @@ model being used for inference).""",
     that you should pass the exactly same argument for label_cols
     as was used during the training phase (of the model being used
     for inference). """,
-)
-@click.option(
-    "--repeat_dims/--no-repeat_dims",
-    default=True,
-    help="""In case of multi-channel data_preprocessing, whether to repeat a two
-              dimensional image as many times as the number of channels""",
 )
 @click.option(
     "--mc_dropout/--no-mc_dropout",
@@ -200,43 +174,11 @@ model being used for inference).""",
 to ensure proper cutout size""",
 )
 @click.option(
-    "--errors/--no-errors",
-    default=False,
-    help="""If True and if the model allows for it, aleatoric uncertainties are
-    written to the output file. Only set this to True if you trained the model
-    with aleatoric loss.""",
-)
-@click.option(
-    "--cov_errors/--no-cov_errors",
-    default=False,
-    help="""If True and if the model allows for it, aleatoric uncertainties are
-    written to the output file. Only set this to True if you trained the model
-    with aleatoric_cov loss.""",
-)
-@click.option(
     "--labels/--no-labels",
     default=True,
     help="""If True, this means you have labels available for the dataset.
     If False, this means that you have no labels available and want to do
     pure inference using a pre-trained model.""",
-)
-@click.option(
-    "--scaling_data_dir",
-    type=click.Path(exists=True),
-    required=False,
-    default=None,
-    help="""If you have a separate directory for scaling data_preprocessing,
-    you can specify it here. This is helpful when using the
-    no-labels argument.""",
-)
-@click.option(
-    "--scaling_slug",
-    type=str,
-    required=False,
-    default=None,
-    help="""This specifies which slug (balanced/unbalanced
-    xs, sm, lg, dev) corresponding to the scaling_data_dir
-    is used to perform the data_preprocessing scaling on.""",
 )
 def main(
     model_path,
@@ -252,62 +194,29 @@ def main(
     n_workers,
     label_cols,
     model_type,
-    repeat_dims,
-    label_scaling,
     mc_dropout,
     dropout_rate,
     transform,
     errors,
-    cov_errors,
     n_runs,
     ini_run_num,
     labels,
-    scaling_data_dir,
-    scaling_slug,
 ):
 
-    if labels is False:
-        logging.info(
-            """Performing pure inference without labels. Using
+    logging.info(
+        """Performing pure inference without labels. Using
             column names to infer number of expected outputs.
             Split and Slug values entered will be ignored and
             info.csv will be used."""
-        )
-        split = None
-        slug = None
-
-        if scaling_data_dir is None:
-            raise ValueError(
-                """You must specify a scaling_data_dir if
-                you are not using labels."""
-            )
-        elif scaling_slug is None:
-            raise ValueError(
-                """You must specify a scaling_slug if you are
-                not using labels."""
-            )
-    else:
-        scaling_data_dir = data_dir
-        scaling_slug = slug
+    )
+    split = None
+    slug = None
 
     # Create label cols array
     label_cols_arr = label_cols.split(",")
 
-    # Calculating the number of outputs
-    if errors:
-        n_out = int(len(label_cols_arr) * 2)
-    elif cov_errors:
-        n_var = len(label_cols_arr)
-        n_out = int((3 * n_var + n_var ** 2) / 2)
-    else:
-        n_out = len(label_cols_arr)
-
     # Transforming the dataset to the proper cutout size
     T = None
-    if transform:
-        T = nn.Sequential(
-            K.CenterCrop(cutout_size),
-        )
 
     # Load the data_preprocessing and create a data_preprocessing loader
     logging.info("Loading images to device...")
@@ -319,12 +228,8 @@ def main(
         cutout_size=cutout_size,
         channels=channels,
         label_col=label_cols_arr,
-        repeat_dims=repeat_dims,
-        label_scaling=label_scaling,
-        transform=T if T is not None else None,
-        scaling_data_dir=scaling_data_dir,
-        scaling_slug=scaling_slug,
-        load_labels=labels,
+        transform=T,
+        load_labels=False
     )
 
     for run_num in range(ini_run_num, n_runs + ini_run_num):

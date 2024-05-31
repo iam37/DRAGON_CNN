@@ -34,7 +34,8 @@ class FITSDataset(Dataset):
         cutout_size=256,
         normalize=None,
         transforms=None,  # Supports a list of transforms or a single transform func.
-        channels=1
+        channels=1,
+        load_labels=True
     ):
 
         # Set data_preprocessing directories
@@ -51,12 +52,15 @@ class FITSDataset(Dataset):
 
         # Set requested transforms
         self.normalize = normalize
-        self.transform = transform
+        self.transform = transforms
 
         # Define paths
         self.data_info = load_cat(self.data_dir, slug, split)
         self.filenames = np.asarray(self.data_info["file_name"])
-        self.labels = np.asarray(self.data_info[label_col])
+
+        # Loading labels if for training, not if for inference.
+        if load_labels:
+            self.labels = np.asarray(self.data_info[label_col])
 
         # If we haven't already generated PyTorch tensor files, generate them
         logging.info("Generating PyTorch tensors from FITS files...")
