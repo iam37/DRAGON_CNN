@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 import kornia.augmentation as K
 
-from data import FITSDataset, get_data_loader
+from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory
 from utils import (
     discover_devices,
@@ -68,7 +68,7 @@ def predict(
     else:
         model.load_state_dict(torch.load(model_path))
 
-    # Create a data loader
+    # Create a data_preprocessing loader
     loader = get_data_loader(
         dataset, batch_size=batch_size, n_workers=n_workers, shuffle=False
     )
@@ -143,7 +143,7 @@ model being used for inference).""",
     type=int,
     default=4,
     help="""The number of workers to be used during the
-              data loading process.""",
+              data_preprocessing loading process.""",
 )
 @click.option(
     "--parallel/--no-parallel",
@@ -163,7 +163,7 @@ model being used for inference).""",
 @click.option(
     "--repeat_dims/--no-repeat_dims",
     default=True,
-    help="""In case of multi-channel data, whether to repeat a two
+    help="""In case of multi-channel data_preprocessing, whether to repeat a two
               dimensional image as many times as the number of channels""",
 )
 @click.option(
@@ -228,7 +228,7 @@ to ensure proper cutout size""",
     type=click.Path(exists=True),
     required=False,
     default=None,
-    help="""If you have a separate directory for scaling data,
+    help="""If you have a separate directory for scaling data_preprocessing,
     you can specify it here. This is helpful when using the
     no-labels argument.""",
 )
@@ -239,7 +239,7 @@ to ensure proper cutout size""",
     default=None,
     help="""This specifies which slug (balanced/unbalanced
     xs, sm, lg, dev) corresponding to the scaling_data_dir
-    is used to perform the data scaling on.""",
+    is used to perform the data_preprocessing scaling on.""",
 )
 def main(
     model_path,
@@ -312,7 +312,7 @@ def main(
             K.CenterCrop(cutout_size),
         )
 
-    # Load the data and create a data loader
+    # Load the data_preprocessing and create a data_preprocessing loader
     logging.info("Loading images to device...")
     dataset = FITSDataset(
         data_dir,
