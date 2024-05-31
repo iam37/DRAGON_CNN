@@ -161,7 +161,7 @@ def train(**kwargs):
     args["splits"] = {k: len(v.dataset) for k, v in loaders.items()}
 
     # Initializing W&B run
-    run = wandb.init(
+    with wandb.init(
         project=args["experiment_name"],
         id=args["run_id"],
         resume="allow",
@@ -175,29 +175,28 @@ def train(**kwargs):
             "architecture": "CNN",
             "epochs": 10,
         }
-    )
+    ) as run:
+        # Write the parameters and model stats to W&B
+        args = {**args, **model_stats(model)}
+        wandb.log(args)
 
-    # Write the parameters and model stats to W&B
-    args = {**args, **model_stats(model)}
-    wandb.log(args)
+        # Set up trainer
+        trainer = create_trainer(
+            model, optimizer, criterion, loaders, args["device"]
+        )
 
-    # Set up trainer
-    trainer = create_trainer(
-        model, optimizer, criterion, loaders, args["device"]
-    )
+        # Run trainer and save model state
+        trainer.run(loaders["train"], max_epochs=args["epochs"])
+        slug = (
+            f"{args['experiment_name']}-{args['split_slug']}-"
+            f"{run.id}"
+        )
 
-    # Run trainer and save model state
-    trainer.run(loaders["train"], max_epochs=args["epochs"])
-    slug = (
-        f"{args['experiment_name']}-{args['split_slug']}-"
-        f"{wandb.run.id}"
-    )
+        model_path = save_trained_model(model, slug)
+        logging.info(f"Saved model to {model_path}")
 
-    model_path = save_trained_model(model, slug)
-    logging.info(f"Saved model to {model_path}")
-
-    # Log model as an artifact
-    wandb.log_artifact(model_path)
+        # Log model as an artifact
+        wandb.log_artifact(model_path)
 
 
 if __name__ == "__main__":

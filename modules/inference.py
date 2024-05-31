@@ -7,16 +7,13 @@ import torch.nn as nn
 
 from tqdm import tqdm
 
-import kornia.augmentation as K
-
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory
 from utils import (
     discover_devices,
-    standardize_labels,
     enable_dropout,
     specify_dropout_rate,
-    load_cat,
+    load_data_dir,
 )
 
 
@@ -412,7 +409,7 @@ def main(
             )
 
         # Write a CSV of predictions
-        catalog = load_cat(data_dir, slug, split)
+        catalog = load_data_dir(data_dir, slug, split)
 
         for i, label in enumerate(label_cols_arr):
 
