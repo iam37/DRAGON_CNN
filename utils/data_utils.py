@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 
 
-def load_cat(data_dir, slug, split):
+def load_data_dir(data_dir, slug=None, split=None):
     """Loads and returns pandas dataframe"""
 
     data_dir = Path(data_dir)

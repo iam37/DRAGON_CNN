@@ -189,7 +189,7 @@ def bayesian_inference_file_gobbler(
     data_dir, num=300, unscale=False, scaling_df_path=None, drop_old=True
 ):
 
-    # read in the 1st csv file as the base data-frame
+    # read in the 1st csv file as the base data_preprocessing-frame
     base_frame = pd.read_csv(data_dir + "inf_1.csv")
 
     if unscale is True:
@@ -327,7 +327,7 @@ def main(
     drop_old,
 ):
     """A function which performs all the above steps
-    necessary to prepeare the data for analysis"""
+    necessary to prepeare the data_preprocessing for analysis"""
 
     data = bayesian_inference_file_gobbler(
         data_dir,

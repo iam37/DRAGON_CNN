@@ -10,7 +10,7 @@ import kornia.augmentation as K
 
 from tqdm import tqdm
 
-from data import FITSDataset
+from data_preprocessing import FITSDataset
 from cnn import model_factory
 from utils import arsinh_normalize, discover_devices
 from astropy.io import fits

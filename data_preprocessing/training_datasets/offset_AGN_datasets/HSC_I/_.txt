@@ -1,0 +1,2 @@
+#?rerun filter ra dec type sh sw name
+pdr3_wide HSC-I 359.87740407 15.85577007 coadd 8asec 8asec GB6J235927+155109
