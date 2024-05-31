@@ -5,20 +5,16 @@ import math
 from pathlib import Path
 from functools import partial
 
-import mlflow
+import wandb
 
 import torch
 import torch.nn as nn
 import torch.optim as opt
 
-import kornia.augmentation as K
-
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
 from train import create_trainer
 from utils import discover_devices, specify_dropout_rate
-from visualization.spatial_transform import visualize_spatial_transform
-from ggt.losses import AleatoricLoss, AleatoricCovLoss
 
 
 @click.command()
@@ -134,11 +130,7 @@ def train(**kwargs):
 
     # Define the criterion
     loss_dict = {
-        "mse": nn.MSELoss(),
-        "aleatoric": AleatoricLoss(average=True),
-        "aleatoric_cov": AleatoricCovLoss(
-            num_var=len(target_metric_arr), average=True
-        ),
+        "nll": nn.NLLloss(),
     }
     criterion = loss_dict[args["loss"]]
 
@@ -151,6 +143,7 @@ def train(**kwargs):
 
     # Select the desired transforms
     T = None
+
     # Generate the DataLoaders and log the train/devel/test split sizes
     splits = ("train", "devel", "test")
     datasets = {
@@ -170,6 +163,8 @@ def train(**kwargs):
     # Initializing W&B run
     run = wandb.init(
         project=args["experiment_name"],
+        id=args["run_id"],
+        resume="allow",
 
         # track hyperparameters and run metadata
         config={
@@ -182,49 +177,27 @@ def train(**kwargs):
         }
     )
 
-    with mlflow.start_run(run_id=args["run_id"], run_name=args["run_name"]):
+    # Write the parameters and model stats to W&B
+    args = {**args, **model_stats(model)}
+    wandb.log(args)
 
-        # Write the parameters and model stats to MLFlow
-        args = {**args, **model_stats(model)}  # py3.9: d1 |= d2
-        for k, v in args.items():
-            mlflow.log_param(k, v)
+    # Set up trainer
+    trainer = create_trainer(
+        model, optimizer, criterion, loaders, args["device"]
+    )
 
-        # Set up trainer
-        trainer = create_trainer(
-            model, optimizer, criterion, loaders, args["device"]
-        )
+    # Run trainer and save model state
+    trainer.run(loaders["train"], max_epochs=args["epochs"])
+    slug = (
+        f"{args['experiment_name']}-{args['split_slug']}-"
+        f"{wandb.run.id}"
+    )
 
-        # Run trainer and save model state
-        trainer.run(loaders["train"], max_epochs=args["epochs"])
-        slug = (
-            f"{args['experiment_name']}-{args['split_slug']}-"
-            f"{mlflow.active_run().info.run_id}"
-        )
-        model_path = save_trained_model(model, slug)
-        logging.info("Saved model to {}".format(model_path))
+    model_path = save_trained_model(model, slug)
+    logging.info(f"Saved model to {model_path}")
 
-        # Log model as an artifact
-        mlflow.log_artifact(model_path)
-
-        # Visualize spatial transformation
-        if args["model_type"] != "vgg16":
-            if hasattr(model, "spatial_transform") or hasattr(
-                model.module, "spatial_transform"
-            ):
-                output_dir = Path("output") / slug
-                output_dir.mkdir(parents=True, exist_ok=True)
-                nrow = round(math.sqrt(args["batch_size"]))
-                visualize_spatial_transform(
-                    model,
-                    loaders["devel"],
-                    output_dir,
-                    device=args["device"],
-                    nrow=nrow,
-                )
-
-                # Log output directory as an artifact
-                mlflow.log_artifacts(output_dir)
-
+    # Log model as an artifact
+    wandb.log_artifact(model_path)
 
 
 if __name__ == "__main__":
