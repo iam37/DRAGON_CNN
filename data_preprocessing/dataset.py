@@ -9,10 +9,8 @@ from torch.utils.data import Dataset
 import torch.multiprocessing as mp
 
 from utils import (
-    arsinh_normalize,
     load_tensor,
-    standardize_labels,
-    load_cat,
+    load_data_dir
 )
 
 import logging
@@ -27,19 +25,18 @@ class FITSDataset(Dataset):
 
     def __init__(
         self,
-        data_dir,
+        data_dir='/dev/null',
         label_col="classes",
         slug=None,  # a slug is a human readable ID
         split=None,  # splits are defined in make_split.py file.
-        cutout_size=256,
-        normalize=None,
+        cutout_size=94,
+        normalize=None,  # Whether labels will be normalized.
         transforms=None,  # Supports a list of transforms or a single transform func.
         channels=1,
         load_labels=True
     ):
-
         # Set data_preprocessing directories
-        self.data_dir = Path(data_dir)
+        self.data_dir = Path(data_dir)  # As long as you keep the label csv in one spot with all nested directories
         self.cutouts_path = self.data_dir / "cutouts"
         self.tensors_path = self.data_dir / "tensors"
         self.tensors_path.mkdir(parents=True, exist_ok=True)
@@ -55,38 +52,47 @@ class FITSDataset(Dataset):
         self.transform = transforms
 
         # Define paths
-        self.data_info = load_cat(self.data_dir, slug, split)
+        self.data_info = load_data_dir(self.data_dir, slug, split)
         self.filenames = np.asarray(self.data_info["file_name"])
 
         # Loading labels if for training, not if for inference.
         if load_labels:
             self.labels = np.asarray(self.data_info[label_col])
+        else:
+            # generate fake labels of appropriate shape
+            self.labels = np.ones((len(self.data_info), len(label_col)))
 
         # If we haven't already generated PyTorch tensor files, generate them
         logging.info("Generating PyTorch tensors from FITS files...")
         for filename in tqdm(self.filenames):
             filepath = self.tensors_path / (filename + ".pt")
-            if not filepath.is_file():
+            if not filepath.is_file():  # If the tensors were not pre-generated, this returns True.
+                if filename.contains('/'):  # Flattening out the directory and altering file path.
+                    filename = filename.replace('/', '_')
+                    filepath = self.tensors_path / (filename + ".pt")
+
+                # All files saved to one cutouts folder.
                 load_path = self.cutouts_path / filename
                 t = FITSDataset.load_fits_as_tensor(load_path)
                 torch.save(t, filepath)
 
-        # Preload the tensors
+        # If instead the files are loaded, preload the tensors!
         n = len(self.filenames)
+        filepaths = [fl.replace('/', '_') if fl.contains('/') else fl for fl in self.filenames]  # Flatten
         logging.info(f"Preloading {n} tensors...")
         load_fn = partial(load_tensor, tensors_path=self.tensors_path)
         with mp.Pool(mp.cpu_count()) as p:
             # Load to NumPy, then convert to PyTorch (hack to solve system
             # issue with multiprocessing + PyTorch tensors)
             self.observations = list(
-                tqdm(p.imap(load_fn, self.filenames), total=n)
+                tqdm(p.imap(load_fn, filepaths), total=n)
             )
 
     def __getitem__(self, index):
         """Magic method to index into the dataset."""
         if isinstance(index, slice):
             start, stop, step = index.indices(len(self))
-            return [self[i] for i in range(start, stop, step)]
+            return [self[i] for i in range(start, stop, step)]  # Slice indexing.
         elif isinstance(index, int):
             # If the index is an integer, we proceed as normal and load up our tensor as a data point.
             # We support wrap around functionality
@@ -103,10 +109,12 @@ class FITSDataset(Dataset):
                 else:  # If inputted a single transform.
                     pt = self.transform(pt)
 
+            # Normalization of labels
             if self.normalize is not None:
-                pt = self.normalize(pt)
+                label = self.normalize(label)
 
             return pt, label
+
     def __len__(self):
         """Return the effective length of the dataset."""
         return len(self.labels)
