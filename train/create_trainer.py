@@ -5,7 +5,7 @@ from ignite.engine import (
     create_supervised_trainer,
     create_supervised_evaluator,
 )
-from ignite.metrics import Loss, Accuracy, Precision
+from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix
 
 def create_trainer(model, optimizer, criterion, loaders, device):
     """Set up Ignite trainer and evaluator."""
@@ -16,7 +16,8 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     metrics = {
         "accuracy": Accuracy(),
         "precision": Precision(average=False),
-        "loss": Loss(criterion)
+        "loss": Loss(criterion),
+        "confusion_matrix": ConfusionMatrix(num_classes=wandb.config.parameters["num_classes"], output_transform=lambda x: x)
     }
 
     evaluator = create_supervised_evaluator(
@@ -46,7 +47,5 @@ def create_trainer(model, optimizer, criterion, loaders, device):
             metrics = evaluator.state.metrics
             log_dict = {k: v for k, v in zip(metrics.keys(), metrics.values())}
             wandb.log(log_dict)
-
-        wandb.finish()
 
     return trainer

@@ -211,15 +211,16 @@ def train(**kwargs):
                 "momentum": args["momentum"],
                 "nesterov": args["nesterov"],
                 "weight_decay": args["weight_decay"],
+                "num_classes": args["num_classes"],
                 "architecture": "CNN",
-                "epochs": 10,
+                "epochs": args["epochs"],
                 "batch_size": args["batch_size"]
             }
         }
     ) as run:
         # Write the parameters and model stats to W&B
         args = {**args, **model_stats(model)}
-        wandb.log(args)
+        run.log(args)
 
         # Set up trainer
         trainer = create_trainer(
@@ -234,10 +235,13 @@ def train(**kwargs):
         )
 
         model_path = save_trained_model(model, slug)
-        logging.info(f"Saved model to {model_path}")
 
         # Log model as an artifact
-        wandb.log_artifact(model_path)
+        logging.info(f"Saved model to {model_path}")
+        run.log_artifact(model_path)
+
+        # Finish the W&B run!
+        wandb.finish()
 
 
 if __name__ == "__main__":
