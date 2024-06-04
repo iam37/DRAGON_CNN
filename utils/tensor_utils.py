@@ -6,7 +6,14 @@ def tensor_to_numpy(x):
     return np.clip(x.numpy().transpose((1, 2, 0)), 0, 1)
 
 
-def load_tensor(filename, tensors_path, as_numpy=True):
+def arsinh_normalize(X):
+    """Normalize a Torch tensor with arsinh."""
+    return torch.log(X + (X ** 2 + 1) ** 0.5)
+
+def load_tensor(filename, tensors_path, as_numpy=False):
     """Load a Torch tensor from disk."""
-    return torch.load(tensors_path / (filename + ".pt"))
+    if not as_numpy:
+        return torch.load(tensors_path / (filename + ".pt"))
+
+    return torch.load(tensors_path / (filename + ".pt")).numpy()
 

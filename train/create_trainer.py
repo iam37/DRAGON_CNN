@@ -1,5 +1,4 @@
 import wandb
-import torch.nn as nn
 
 from ignite.engine import (
     Events,

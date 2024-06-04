@@ -11,9 +11,11 @@ import torch
 import torch.nn as nn
 import torch.optim as opt
 
+import kornia.augmentation as K
+
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
-from train import create_trainer
+from create_trainer import create_trainer
 from utils import discover_devices, specify_dropout_rate
 
 
@@ -54,14 +56,26 @@ devel/test sets. Balanced/Unbalanced refer to whether selecting
 equal number of images from each class. xs, sm, lg, dev all refer
 to what fraction is picked for train/devel/test.""",
 )
-@click.option("--cutout_size", type=int, default=167)
+@click.option("--cutout_size", type=int, default=94)
 @click.option("--channels", type=int, default=3)
+@click.option("--num_classes", type=int, default=6)
 @click.option(
     "--n_workers",
     type=int,
     default=4,
     help="""The number of workers to be used during the
 data_preprocessing loading process.""",
+)
+@click.option(
+    "--loss",
+    type=click.Choice(
+        [
+            "nll",
+        ],
+        case_sensitive=False,
+    ),
+    default="nll",
+    help="""The loss function to use""",
 )
 @click.option("--batch_size", type=int, default=16)
 @click.option("--epochs", type=int, default=40)
@@ -76,9 +90,16 @@ to use multiple GPUs when they are available""",
 )
 @click.option(
     "--normalize/--no-normalize",
-    default=True,
+    default=False,
     help="""The normalize argument controls whether or not, the
 loaded images will be normalized using the arsinh function""",
+)
+@click.option(
+    "--crop/--no-crop",
+    default=True,
+    help="""If True, all images are passed through a cropping
+operation before being fed into the network. Images are cropped
+to the cutout_size parameter""",
 )
 @click.option(
     "--nesterov/--no-nesterov",
@@ -107,6 +128,7 @@ def train(**kwargs):
     model_args = {
         "cutout_size": args["cutout_size"],
         "channels": args["channels"],
+        "num_classes": args["num_classes"]
     }
 
     if "drp" in args["model_type"].split("_"):
@@ -140,7 +162,7 @@ def train(**kwargs):
 
     # Define the criterion
     loss_dict = {
-        "nll": nn.NLLloss(),
+        "nll": nn.NLLLoss(),
     }
     criterion = loss_dict[args["loss"]]
 
@@ -153,6 +175,8 @@ def train(**kwargs):
 
     # Select the desired transforms
     T = None
+    if args["crop"]:
+        T = K.CenterCrop(args["cutout_size"])
 
     # Generate the DataLoaders and log the train/devel/test split sizes
     splits = ("train", "devel", "test")
@@ -163,12 +187,16 @@ def train(**kwargs):
             cutout_size=args["cutout_size"],
             channels=args["channels"],
             normalize=args["normalize"],
+            transforms=T,
             split=k,
         )
         for k in splits
     }
     loaders = {k: loader_factory(v) for k, v in datasets.items()}
     args["splits"] = {k: len(v.dataset) for k, v in loaders.items()}
+
+    # Log into W&B
+    wandb.login()
 
     # Initializing W&B run
     with wandb.init(
@@ -178,12 +206,15 @@ def train(**kwargs):
 
         # track hyperparameters and run metadata
         config={
-            "learning_rate": args["lr"],
-            "momentum": args["momentum"],
-            "nesterov": args["nesterov"],
-            "weight_decay": args["weight_decay"],
-            "architecture": "CNN",
-            "epochs": 10,
+            "parameters": {
+                "learning_rate": args["lr"],
+                "momentum": args["momentum"],
+                "nesterov": args["nesterov"],
+                "weight_decay": args["weight_decay"],
+                "architecture": "CNN",
+                "epochs": 10,
+                "batch_size": args["batch_size"]
+            }
         }
     ) as run:
         # Write the parameters and model stats to W&B
