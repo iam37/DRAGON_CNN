@@ -57,7 +57,7 @@ equal number of images from each class. xs, sm, lg, dev all refer
 to what fraction is picked for train/devel/test.""",
 )
 @click.option("--cutout_size", type=int, default=94)
-@click.option("--channels", type=int, default=3)
+@click.option("--channels", type=int, default=1)
 @click.option("--num_classes", type=int, default=6)
 @click.option(
     "--n_workers",
@@ -160,12 +160,6 @@ def train(**kwargs):
         weight_decay=args["weight_decay"],
     )
 
-    # Define the criterion
-    loss_dict = {
-        "nll": nn.NLLLoss(),
-    }
-    criterion = loss_dict[args["loss"]]
-
     # Create a DataLoader factory based on command-line args
     loader_factory = partial(
         get_data_loader,
@@ -194,6 +188,12 @@ def train(**kwargs):
     }
     loaders = {k: loader_factory(v) for k, v in datasets.items()}
     args["splits"] = {k: len(v.dataset) for k, v in loaders.items()}
+
+    # Define the criterion
+    loss_dict = {
+        "nll": nn.NLLLoss(),
+    }
+    criterion = loss_dict[args["loss"]]
 
     # Log into W&B
     wandb.login()

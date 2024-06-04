@@ -77,16 +77,13 @@ class FITSDataset(Dataset):
         # If we haven't already generated PyTorch tensor files, generate them
         logging.info("Generating PyTorch tensors from FITS files...")
         for filename in tqdm(self.filenames):
-            filepath = self.tensors_path / (filename + ".pt")
+            flattened_filename = filename.replace('/', '_')  # Flattening out the directory and altering file path.
+            filepath = self.tensors_path / (flattened_filename + ".pt")
             if not filepath.is_file():  # If the tensors were not pre-generated, this returns True.
                 # All files saved to one cutouts folder.
                 # load_path = self.cutouts_path / filename (If we want to maintain cutouts method)
                 load_path = self.data_dir / filename
                 t = FITSDataset.load_fits_as_tensor(load_path)
-
-                if '/' in filename:  # Flattening out the directory and altering file path.
-                    filename = filename.replace('/', '_')
-                    filepath = self.tensors_path / (filename + ".pt")
 
                 torch.save(t, filepath)
 
@@ -130,6 +127,8 @@ class FITSDataset(Dataset):
                 pt = arsinh_normalize(pt)
 
             return pt.squeeze(1), label
+        else:
+            raise TypeError(f"Invalid argument type: {type(index)}")
 
     def __len__(self):
         """Return the effective length of the dataset."""
