@@ -1,5 +1,6 @@
 from astropy.io import fits
 import numpy as np
+import pandas as pd
 from functools import partial
 from pathlib import Path
 from tqdm import tqdm
@@ -10,7 +11,8 @@ import torch.multiprocessing as mp
 
 from utils import (
     load_tensor,
-    load_data_dir
+    load_data_dir,
+    arsinh_normalize
 )
 
 import logging
@@ -30,7 +32,7 @@ class FITSDataset(Dataset):
         slug=None,  # a slug is a human readable ID
         split=None,  # splits are defined in make_split.py file.
         cutout_size=94,
-        normalize=None,  # Whether labels will be normalized.
+        normalize=False,  # Whether labels will be normalized.
         transforms=None,  # Supports a list of transforms or a single transform func.
         channels=1,
         load_labels=True
@@ -57,28 +59,40 @@ class FITSDataset(Dataset):
 
         # Loading labels if for training, not if for inference.
         if load_labels:
-            self.labels = np.asarray(self.data_info[label_col])
+            label_info_path = self.data_dir / "labels.csv"
+            if label_info_path.is_file():
+                # If a label csv dictionary is provided with strings
+                label_df = pd.read_csv(label_info_path)
+                self.label_dict = {row["key"]: row["value"] for _, row in label_df.iterrows()}
+                self.labels = np.asarray([self.label_dict[v] for v in self.data_info[label_col]])
+            else:
+                self.labels = np.asarray(self.data_info[label_col])
+
+            self.num_classes = np.unique(self.labels)
         else:
             # generate fake labels of appropriate shape
-            self.labels = np.ones((len(self.data_info), len(label_col)))
+            self.labels = np.ones((len(self.data_info), len(label_col)))  # Double check
+            self.num_classes = 1
 
         # If we haven't already generated PyTorch tensor files, generate them
         logging.info("Generating PyTorch tensors from FITS files...")
         for filename in tqdm(self.filenames):
             filepath = self.tensors_path / (filename + ".pt")
             if not filepath.is_file():  # If the tensors were not pre-generated, this returns True.
-                if filename.contains('/'):  # Flattening out the directory and altering file path.
+                # All files saved to one cutouts folder.
+                # load_path = self.cutouts_path / filename (If we want to maintain cutouts method)
+                load_path = self.data_dir / filename
+                t = FITSDataset.load_fits_as_tensor(load_path)
+
+                if '/' in filename:  # Flattening out the directory and altering file path.
                     filename = filename.replace('/', '_')
                     filepath = self.tensors_path / (filename + ".pt")
 
-                # All files saved to one cutouts folder.
-                load_path = self.cutouts_path / filename
-                t = FITSDataset.load_fits_as_tensor(load_path)
                 torch.save(t, filepath)
 
         # If instead the files are loaded, preload the tensors!
         n = len(self.filenames)
-        filepaths = [fl.replace('/', '_') if fl.contains('/') else fl for fl in self.filenames]  # Flatten
+        filepaths = [fl.replace('/', '_') if '/' in fl else fl for fl in self.filenames]  # Flatten
         logging.info(f"Preloading {n} tensors...")
         load_fn = partial(load_tensor, tensors_path=self.tensors_path)
         with mp.Pool(mp.cpu_count()) as p:
@@ -87,6 +101,8 @@ class FITSDataset(Dataset):
             self.observations = list(
                 tqdm(p.imap(load_fn, filepaths), total=n)
             )
+
+        print("Initialization of FITS Dataset Completed.")
 
     def __getitem__(self, index):
         """Magic method to index into the dataset."""
@@ -109,11 +125,11 @@ class FITSDataset(Dataset):
                 else:  # If inputted a single transform.
                     pt = self.transform(pt)
 
-            # Normalization of labels
-            if self.normalize is not None:
-                label = self.normalize(label)
+            # Normalization of images
+            if self.normalize:
+                pt = arsinh_normalize(pt)
 
-            return pt, label
+            return pt.squeeze(1), label
 
     def __len__(self):
         """Return the effective length of the dataset."""
