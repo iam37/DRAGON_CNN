@@ -14,9 +14,33 @@ import csv
 from tqdm import tqdm
 import time
 import glob
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+import shutil
+import os
+from os.path import exists
 
 
-def dualAGN_3DPSFFit(QSO, quasarName, xCenter, yCenter, contour_destination_filepath, psf_destination_filepath, radius):
+def bubbleSort(array):
+    for i in range(len(array)):
+        for j in np.arange(0, i, 1):
+            if array[j] > array[j+1]:
+                temp = array[j]
+                array[j] = array[j+1]
+                array[j+1] = temp
+    return array
+def crop_center(img, cropx, cropy):
+    
+    #Function from 
+    #https://stackoverflow.com/questions/39382412/crop-center-portion-of-a-numpy-image
+    
+    y, x, *_ = img.shape
+    startx = x // 2 - (cropx // 2)
+    #print(startx)
+    starty = y // 2 - (cropy // 2) 
+    #print(starty)
+    return img[starty:starty + cropy, startx:startx + cropx, ...]
+def dualAGN_3DPSFFit(QSO, quasar_name, radius):
     startTime = time.time()
     #print(np.shape(QSO))
     #badval = []
@@ -25,25 +49,15 @@ def dualAGN_3DPSFFit(QSO, quasarName, xCenter, yCenter, contour_destination_file
     #fig, ax = plt.subplots(nrows=1, ncols=2,figsize=(16,10))
     #ax = ax.flatten()
     imsize = len(QSO)
-    print(quasarName)
-    print(contour_destination_filepath) 
-    
+    logging.info(f"Now processing AGN: {quasar_name}")
     """Background subtraction algorithm"""
+    QSO = np.ascontiguousarray(QSO)
     QSO = QSO.byteswap(inplace = True).newbyteorder()
     bkgd = sep.Background(QSO)
     QSO = QSO - bkgd
     Sources_Source_Extract = sep.extract(QSO, 1.5, err = bkgd.globalrms)
     numSources = len(Sources_Source_Extract)
-    print("Number of sources detected using SOURCE_EXTRACT: " + str(numSources))
-    figure = plt.figure()
-    plt.imshow(QSO, vmin = 0.0, vmax = 1.2, cmap = "gray_r")
-    plt.xlabel("X-Axis [Pixels]")
-    plt.ylabel("Y-Axis [Pixels]")
-    plt.title(quasarName)
-    ax = plt.gca()
-    
-    ax.invert_yaxis()
-    plt.grid()
+    logging.info("Number of sources detected using SOURCE_EXTRACT: " + str(numSources))
     
     Y, X = np.indices(QSO.shape)
     xdata = np.vstack((X.ravel(), Y.ravel()))
@@ -142,7 +156,7 @@ def dualAGN_3DPSFFit(QSO, quasarName, xCenter, yCenter, contour_destination_file
     
     """Following section re-performs fit if reduced chi-square value is > 0.06. Fits with large reduced chi-square values
     do not accurately reflect the positions of the centers of the quasars and thus are not useful in determining the if a double nucleus quasar exists"""
-    placeholder = False
+    placeholder = False # For the purposes of this single AGN finder, we don't need a second check, so this loop will no
     if placeholder:
         start_time = time.time()
         #Fit a single Gaussian to the data and see if it accurately finds the center of the central QSO
@@ -151,10 +165,6 @@ def dualAGN_3DPSFFit(QSO, quasarName, xCenter, yCenter, contour_destination_file
         results_sigmaX = result.params['sigmax'].value
         results_sigmaY = result.params['sigmay'].value
         results_amplitude = result.params['amplitude'].value
-        plt.imshow(QSO, vmin = 0.2, vmax = 0.9)
-        plt.contour(X, Y, fit, cmap = "plasma")
-        plt.grid()
-        plt.close()
         #plt.show()
         newParams= gauss_1.make_params()
         newParams['g1_amplitude'].set(g1_amplitude, min = results_amplitude*0.2, max = results_amplitude*5, vary = True)
@@ -213,18 +223,7 @@ def dualAGN_3DPSFFit(QSO, quasarName, xCenter, yCenter, contour_destination_file
             #print("Revised Fit took " + str(time.time() - startingtime) + " seconds to complete.")
         redChiFits = bubbleSort(redChiFits)
         lowestRedChi = redChiFits[0]
-        """
-        for i in np.arange(0, 360, 20):
-            startTime = time.time()
-            newParams['g2_centerx'].set(gauss1_fit.params['g1_centerx'].value + 5*np.cos(i*np.pi/180), min = np.absolute(len(X)/2) , max = len(X)/2 + 25*np.cos(i*np.pi/180) + 1, vary = True)
-            newParams['g2_centery'].set(gauss1_fit.params['g1_centery'].value + 5*np.sin(i*np.pi/180), min = np.absolute(len(Y)/2), max = len(Y)/2 + 25*np.sin(i*np.pi/180) + 1, vary = True)
-            newFit = twinPeakModel.fit(QSO, newParams, x=X, y=Y,nan_policy = 'omit')
-            redChiTemp = newFit.redchi
-            newFits.append(newFit)
-            redChiFits.append(redChiTemp)
-            endTime = time.time()
-            print("Refit process took: " + str(endTime -startTime) + " seconds")
-        """
+        
         
         #redChiFits = bubbleSort(redChiFits)
         #lowestRedChi = redChiFits[0]
@@ -270,5 +269,28 @@ def dualAGN_3DPSFFit(QSO, quasarName, xCenter, yCenter, contour_destination_file
         
     print("--- %s seconds ---" % (time.time() - startTime))
     return fitParams
-def find_single_AGN(singles_filepath, singles_to_find = 1000):
-    for image in glob.glob(f"{singles_filepath}*.fits"):
+def find_single_AGN(singles_to_find = 1000):
+    counter = 0
+    home_directory = os.path.expanduser("~")
+    os.chdir(f"{home_directory}/Dropbox/First_Year_at_Yale/Summer_2024/")
+    print(os.getcwd())
+    singles_filepath = "entire_bands/HSC-G/spring_equatorial/downloaded_imags/"
+    for image in tqdm(glob.glob(f"{singles_filepath}*.fits")):
+        if counter == singles_to_find:
+            break
+        with fits.open(image) as hdul:
+            img = hdul[1].data
+            img = crop_center(img, 94, 94)
+            fit_params = dualAGN_3DPSFFit(img, image, radius = 42)
+            if fit_params[13] == False:
+                destination_filepath = "DRAGON_CNN/data_preprocessing/training_datasets/single_AGN_datasets/confirmed_single_AGN/"
+                if not exists(destination_filepath):
+                    os.makedirs(destination_filepath)
+                    logging.info(f"{destination_filepath} created (did not exists before)")
+                shutil.copy(image, destination_filepath)
+            else:
+                continue
+            counter+=1
+find_single_AGN()            
+
+
