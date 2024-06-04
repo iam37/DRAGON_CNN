@@ -14,8 +14,8 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     )
 
     metrics = {
-        "accuracy": Accuracy(criterion),
-        "precision": Precision(criterion),
+        "accuracy": Accuracy(),
+        "precision": Precision(average=False),
         "loss": Loss(criterion)
     }
 
