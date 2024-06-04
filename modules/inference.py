@@ -246,82 +246,16 @@ def main(
             batch_size=batch_size,
             n_workers=n_workers,
             model_type=model_type,
-            n_out=n_out,
             mc_dropout=mc_dropout,
             dropout_rate=dropout_rate,
         )
 
-        if errors:
-            # Note that here we are drawing the
-            # predictions from a distribution
-            # in the transformed/scaled label space.
-            means = preds[..., : int(n_out / 2)]
-            sks = preds[..., -int(n_out / 2) :]
-            sigmas = torch.sqrt(torch.exp(sks))
-
-            # preds = np.random.normal(means, sigmas)
-            preds = torch.distributions.Normal(means, sigmas).sample()
-            preds = preds.cpu().numpy()
-            means = means.cpu().numpy()
-            sigmas = sigmas.cpu().numpy()
-
-        elif cov_errors:
-            # Note that here we are drawing the
-            # predictions from a distribution
-            # in the transformed/scaled label space.
-            num_var = len(label_cols_arr)
-
-            y_hat = preds[..., : int(num_var)]
-            var = torch.exp(preds[..., int(num_var) : int(num_var * 2)])
-            covs = preds[..., int(num_var * 2) :]
-
-            D = torch.diag_embed(var)
-            D = D.to(preds.device)
-
-            N = torch.zeros(preds.shape[0], num_var, num_var)
-            N = N.to(preds.device)
-
-            i, j = torch.tril_indices(num_var, num_var, -1)
-            N[:, i, j] = covs
-
-            Id = torch.eye(num_var).to(preds.device)
-            Id = Id.reshape(1, num_var, num_var)
-            Id = Id.repeat(preds.shape[0], 1, 1)
-
-            L = Id + N
-            LT = torch.transpose(L, 1, 2)
-            cov_mat = torch.bmm(torch.bmm(L, D), LT)
-
-            preds = torch.distributions.MultivariateNormal(
-                y_hat, cov_mat
-            ).sample()
-            preds = preds.cpu().numpy()
-
-        else:
-            preds = preds.cpu().numpy()
-
-        # Scale labels back to old values
-        if label_scaling is not None:
-
-            preds = standardize_labels(
-                preds,
-                scaling_data_dir,
-                split,
-                scaling_slug,
-                label_cols_arr,
-                label_scaling,
-                invert=True,
-            )
+        preds = preds.cpu().numpy()
 
         # Write a CSV of predictions
         catalog = load_data_dir(data_dir, slug, split)
 
         for i, label in enumerate(label_cols_arr):
-
-            if errors:
-                catalog[f"transformd_mean_{label}"] = means[:, i]
-                catalog[f"transformed_sigma_{label}"] = sigmas[:, i]
-
             catalog[f"preds_{label}"] = preds[:, i]
 
         catalog.to_csv(output_path + f"inf_{run_num}.csv", index=False)

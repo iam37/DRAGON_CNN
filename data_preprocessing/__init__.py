@@ -1,7 +1,5 @@
 from .dataset import FITSDataset
-
 from torch.utils.data import DataLoader
-
 
 def get_data_loader(dataset, batch_size, n_workers, shuffle=True):
     return DataLoader(

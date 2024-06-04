@@ -21,7 +21,6 @@ from utils import discover_devices, specify_dropout_rate
 
 # TODO: FIX THIS!!!
 
-
 # Global Sweep Configuration
 sweep_config = {
     "method": "bayes",
@@ -43,7 +42,7 @@ sweep_config = {
     type=str,
     default=None,
     help="""The run id. Practically this only needs to be used
-if you are resuming a previosuly run experiment""",
+if you are resuming a previously run experiment""",
 )
 @click.option(
     "--run_name",
@@ -165,6 +164,7 @@ def sweep_init(**kwargs):
     # Log into W&B
     wandb.login()
 
+    # Initializing the Sweep
     trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args)
     sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
     wandb.agent(sweep_id=sweep_id, function=trainer_func, count=10)
