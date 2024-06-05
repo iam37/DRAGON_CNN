@@ -197,13 +197,14 @@ def sweep_init(**kwargs):
     sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
     logging.info(
         f"Sweep ID for this run is given as {sweep_id}. For use with parallel GPUs, \
-        use CUDA_VISIBLE_DEVICES=#NUM wandb agent ${sweep_id}"
+        if not auto-detected, use CUDA_VISIBLE_DEVICES=#NUM \
+        wandb agent ${sweep_id}."
     )
 
     # Multiplexing capability.
     if args["device"] == "cpu":  # Multiplex given N cpus
         num_agents = min(mp.cpu_count(), args["n_workers"])
-        logging.info(f"Parallelizing sweeps over {num_agents} CPUs")
+        logging.info(f"Parallelizing sweeps over {num_agents} CPUs.")
         processes = []
         for _ in range(num_agents):
             p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 4})
@@ -215,7 +216,7 @@ def sweep_init(**kwargs):
     elif args["device"] == "cuda":  # Multiplexing using GPUs.
         num_agents = torch.cuda.device_count()
         devices = (torch.cuda.get_device_name(i) for i in range(num_agents))
-        logging.info(f"Parallelizing sweeps over {num_agents} agents")
+        logging.info(f"Parallelizing sweeps over {num_agents} agents.")
         processes = []
         for n in devices:
             os.environ['CUDA_VISIBLE_DEVICES'] = n
@@ -226,7 +227,10 @@ def sweep_init(**kwargs):
         for p in processes:
             p.join()  # Thread join to wait for each to finish execution.
 
-    logging.info(f"All sweeps on sweep ID f{sweep_id} have terminated!")
+    # Housekeeping
+    api = wandb.Api()
+    api.sweep(sweep_id, state='canceled')
+    logging.info(f"All runs on sweep ID f{sweep_id} have terminated and sweep is now canceled.")
 
 
 
@@ -241,9 +245,6 @@ def train(model, datasets, criterion, args):
             "architecture": "CNN"
         }
     ) as run:
-        """Runs the training procedure using MLFlow."""
-        print(wandb.config)
-
         optimizer = opt.SGD(
             model.parameters(),
             lr=wandb.config.learning_rate,
@@ -279,6 +280,7 @@ def train(model, datasets, criterion, args):
         )
 
         model_path = save_trained_model(model, slug)
+
         # Log model as an artifact
         logging.info(f"Saved model to {model_path}")
         run.log_artifact(model_path)
