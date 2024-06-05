@@ -27,7 +27,7 @@ class DRAGON(nn.Module):
         )
         self.layer2 = nn.Sequential(
             nn.Conv2d(64, 96, kernel_size=3, padding = 1, stride = 2),
-            nn.BatchNorm2d(64),
+            nn.BatchNorm2d(96),
             nn.LeakyReLU(),
             nn.AvgPool2d(kernel_size=2, stride=2)
         )
@@ -69,17 +69,25 @@ class DRAGON(nn.Module):
             nn.LeakyReLU(),
             nn.AvgPool2d(kernel_size = 2, stride = 2)
         )
-        self.fc1 = nn.Linear(512, 1024)
-        self.drop = nn.Dropout2d(0.5)
+        self.fc1 = nn.Linear(128, 1024)
+        self.drop = nn.Dropout(0.5)
         self.fc2 = nn.Linear(1024, num_classes)
 
     def forward(self, x):
+        # print(x.shape)
         out = self.layer1(x)
+        # print(out.shape)
         out = self.layer2(out)
+        # print(out.shape)
         out = self.layer3(out)
+        # print(out.shape)
         out = out.view(out.size(0), -1)
-        print(out.shape)
+        # print(out.shape)
         out = self.fc1(out)
+        # print(out.shape)
         out = self.drop(out)
+        # print(out.shape)
         out = self.fc2(out)
+        # print(out.shape)
+        print(out)
         return out
