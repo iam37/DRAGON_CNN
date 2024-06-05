@@ -6,12 +6,14 @@ from pathlib import Path
 from functools import partial
 
 import wandb
+import os
 
 import torch
 import torch.nn as nn
 import torch.optim as opt
 
 import kornia.augmentation as K
+import torch.multiprocessing as mp
 
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
@@ -182,11 +184,41 @@ def sweep_init(**kwargs):
 
     # Log into W&B
     wandb.login()
+    wandb.require("service")
 
     # Initializing the Sweep
     trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args)
     sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
-    wandb.agent(sweep_id=sweep_id, function=trainer_func, count=10)
+    logging.info(
+        f"Sweep ID for this run is given as {sweep_id}. For use with parallel GPUs, \
+        use CUDA_VISIBLE_DEVICES=#NUM wandb agent ${sweep_id}"
+    )
+
+    # Multiplexing capability.
+    if args["device"] == "cpu":  # Multiplex given N cpus
+        num_agents = min(mp.cpu_count(), args["n_workers"])
+        logging.info(f"Parallelizing sweeps over {num_agents} CPUs")
+        processes = []
+        for _ in range(num_agents):
+            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 10})
+            p.start()  # Start the new child process
+            processes.append(p)
+
+        for p in processes:
+            p.join()  # Thread join to wait for each to finish execution.
+    elif args["device"] == "cuda":  # Multiplexing using GPUs.
+        num_agents = torch.cuda.device_count()
+        logging.info(f"Parallelizing sweeps over {num_agents} agents")
+        processes = []
+        for n in range(num_agents):
+            os.environ['CUDA_VISIBLE_DEVICES'] = n
+            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 10})
+            p.start()  # Start the new child process
+            processes.append(p)
+
+        for p in processes:
+            p.join()  # Thread join to wait for each to finish execution.
+
 
 
 def train(model, datasets, criterion, args):
@@ -195,6 +227,7 @@ def train(model, datasets, criterion, args):
         project=args["experiment_name"],
         id=args["run_id"],
         resume="allow",
+        group="DDP",
         config={
             "num_classes": args["num_classes"],
             "architecture": "CNN"
