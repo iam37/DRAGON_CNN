@@ -6,22 +6,26 @@ from pathlib import Path
 from functools import partial
 
 import wandb
+import os
+import subprocess
 
 import torch
 import torch.nn as nn
 import torch.optim as opt
 
 import kornia.augmentation as K
+import torch.multiprocessing as mp
 
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
 from train import create_trainer
 from utils import discover_devices, specify_dropout_rate
 
-# Global Sweep Configuration
+# Global Sweep Configuration. This also effects early stopping
+# for bad runs!
 sweep_config = {
     "method": "bayes",
-    "metric": {"goal": "minimize", "name": "loss"},
+    "metric": {"goal": "maximize", "name": "accuracy"},
     "parameters": {
         "learning_rate": {"values": [0.001, 0.0001, 0.0005]},
         "momentum": {"values": [1e-4, 1e-5, 1e-6]},
@@ -30,6 +34,11 @@ sweep_config = {
         "epochs": {"values": [10, 15, 20]},
         "batch_size": {"values": [16, 32, 64]},
         "dropout_rate": {"values": [0, 0.5]}
+    },
+    "early_terminate": {
+        "type": "hyperband",
+        "eta": 2,
+        "min_iter": 3
     }
 }
 
@@ -182,27 +191,66 @@ def sweep_init(**kwargs):
 
     # Log into W&B
     wandb.login()
+    wandb.require("service")
 
     # Initializing the Sweep
     trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args)
     sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
-    wandb.agent(sweep_id=sweep_id, function=trainer_func, count=10)
+    logging.info(
+        f"Sweep ID for this run is given as {sweep_id}. For use with parallel GPUs, \
+        if not auto-detected, use CUDA_VISIBLE_DEVICES=#NUM \
+        wandb agent ${sweep_id}."
+    )
+
+    # Multiplexing capability.
+    if args["device"] == "cpu":  # Multiplex given N cpus
+        num_agents = min(mp.cpu_count(), args["n_workers"])
+        logging.info(f"Parallelizing sweeps over {num_agents} CPUs.")
+        processes = []
+        for _ in range(num_agents):
+            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 4})
+            p.start()  # Start the new child process
+            processes.append(p)
+
+        for p in processes:
+            p.join()  # Thread join to wait for each to finish execution.
+    elif args["device"] == "cuda":  # Multiplexing using GPUs.
+        num_agents = torch.cuda.device_count()
+        devices = (torch.cuda.get_device_name(i) for i in range(num_agents))
+        logging.info(f"Parallelizing sweeps over {num_agents} agents.")
+        processes = []
+        for n in devices:
+            os.environ['CUDA_VISIBLE_DEVICES'] = n
+            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 4})
+            p.start()  # Start the new child process
+            processes.append(p)
+
+        for p in processes:
+            p.join()  # Thread join to wait for each to finish execution.
+
+    # Housekeeping
+    sweep_id_escaped = subprocess.list2cmdline([sweep_id])
+    result = subprocess.run(f'wandb sweep --cancel {sweep_id_escaped}', shell=True)
+    if result.returncode != 0:
+        logging.info(f"ERROR: Failed to cancel sweep {sweep_id}.")
+    else:
+        logging.info(f"All runs on sweep ID f{sweep_id} have terminated and sweep is now canceled.")
+
+    return
+
 
 
 def train(model, datasets, criterion, args):
     # Initializing W&B run
     with wandb.init(
-        project=args["experiment_name"],
         id=args["run_id"],
         resume="allow",
+        group="DDP",
         config={
             "num_classes": args["num_classes"],
             "architecture": "CNN"
         }
     ) as run:
-        """Runs the training procedure using MLFlow."""
-        print(wandb.config)
-
         optimizer = opt.SGD(
             model.parameters(),
             lr=wandb.config.learning_rate,
@@ -238,6 +286,7 @@ def train(model, datasets, criterion, args):
         )
 
         model_path = save_trained_model(model, slug)
+
         # Log model as an artifact
         logging.info(f"Saved model to {model_path}")
         run.log_artifact(model_path)
