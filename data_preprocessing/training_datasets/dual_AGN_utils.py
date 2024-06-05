@@ -274,7 +274,7 @@ def find_single_AGN(singles_to_find = 1000):
     home_directory = os.path.expanduser("~")
     os.chdir(f"{home_directory}/Dropbox/First_Year_at_Yale/Summer_2024/")
     print(os.getcwd())
-    singles_filepath = "entire_bands/HSC-G/spring_equatorial/downloaded_imags/"
+    singles_filepath = "entire_bands/HSC-G/fall_equatorial/downloaded_images/"
     for image in tqdm(glob.glob(f"{singles_filepath}*.fits")):
         if counter == singles_to_find:
             break
