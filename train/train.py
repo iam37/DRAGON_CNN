@@ -57,7 +57,7 @@ equal number of images from each class. xs, sm, lg, dev all refer
 to what fraction is picked for train/devel/test.""",
 )
 @click.option("--cutout_size", type=int, default=94)
-@click.option("--channels", type=int, default=3)
+@click.option("--channels", type=int, default=1)
 @click.option("--num_classes", type=int, default=6)
 @click.option(
     "--n_workers",
@@ -160,12 +160,6 @@ def train(**kwargs):
         weight_decay=args["weight_decay"],
     )
 
-    # Define the criterion
-    loss_dict = {
-        "nll": nn.NLLLoss(),
-    }
-    criterion = loss_dict[args["loss"]]
-
     # Create a DataLoader factory based on command-line args
     loader_factory = partial(
         get_data_loader,
@@ -195,6 +189,12 @@ def train(**kwargs):
     loaders = {k: loader_factory(v) for k, v in datasets.items()}
     args["splits"] = {k: len(v.dataset) for k, v in loaders.items()}
 
+    # Define the criterion
+    loss_dict = {
+        "nll": nn.NLLLoss(),
+    }
+    criterion = loss_dict[args["loss"]]
+
     # Log into W&B
     wandb.login()
 
@@ -206,20 +206,21 @@ def train(**kwargs):
 
         # track hyperparameters and run metadata
         config={
+            "num_classes": args["num_classes"],
+            "architecture": "CNN",
             "parameters": {
                 "learning_rate": args["lr"],
                 "momentum": args["momentum"],
                 "nesterov": args["nesterov"],
                 "weight_decay": args["weight_decay"],
-                "architecture": "CNN",
-                "epochs": 10,
+                "epochs": args["epochs"],
                 "batch_size": args["batch_size"]
             }
         }
     ) as run:
         # Write the parameters and model stats to W&B
         args = {**args, **model_stats(model)}
-        wandb.log(args)
+        run.log(args)
 
         # Set up trainer
         trainer = create_trainer(
@@ -234,10 +235,13 @@ def train(**kwargs):
         )
 
         model_path = save_trained_model(model, slug)
-        logging.info(f"Saved model to {model_path}")
 
         # Log model as an artifact
-        wandb.log_artifact(model_path)
+        logging.info(f"Saved model to {model_path}")
+        run.log_artifact(model_path)
+
+        # Finish the W&B run!
+        wandb.finish()
 
 
 if __name__ == "__main__":
