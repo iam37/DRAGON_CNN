@@ -5,7 +5,7 @@ from ignite.engine import (
     create_supervised_trainer,
     create_supervised_evaluator,
 )
-from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix
+from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix, Recall
 
 def create_trainer(model, optimizer, criterion, loaders, device):
     """Set up Ignite trainer and evaluator."""
@@ -15,37 +15,47 @@ def create_trainer(model, optimizer, criterion, loaders, device):
 
     metrics = {
         "accuracy": Accuracy(),
-        "precision": Precision(average=False),
+        "precision": Precision(average="weighted"),
+        "recall": Recall(average="weighted"),
         "loss": Loss(criterion),
-        "confusion_matrix": ConfusionMatrix(num_classes=wandb.config["num_classes"], output_transform=lambda x: x)
+        "cm": ConfusionMatrix(num_classes=wandb.config["num_classes"], output_transform=lambda x: x)
     }
 
     evaluator = create_supervised_evaluator(
         model, metrics=metrics, device=device
     )
 
+    # Function to log metrics to wandb
+    def log_metrics(trainer, loader, log_prefix=""):
+        evaluator.run(loader)
+        metrics = evaluator.state.metrics
+        log_dict = {k: v for k, v in metrics.items() if k != "cm"}
+
+        # Handle the confusion matrix separately
+        cm = metrics["cm"].cpu().numpy()
+        class_names = [str(i) for i in range(wandb.config["num_classes"])]
+        cm_plot = wandb.plot.confusion_matrix(probs=None,
+                                              y_true=cm.argmax(axis=1),
+                                              preds=cm.argmax(axis=0),
+                                              class_names=class_names)
+
+        # Log other metrics and the confusion matrix plot
+        log_dict[f"{log_prefix}confusion_matrix"] = cm_plot
+        wandb.log(log_dict)
+
     # Define training hooks
     @trainer.on(Events.STARTED)
     def log_results_start(trainer):
         for L, loader in loaders.items():
-            evaluator.run(loader)
-            metrics = evaluator.state.metrics
-            log_dict = {k: v for k, v in zip(metrics.keys(), metrics.values())}
-            wandb.log(log_dict)
+            log_metrics(trainer, loader, log_prefix=f"{L}_")
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_devel_results(trainer):
-        evaluator.run(loaders["devel"])
-        metrics = evaluator.state.metrics
-        log_dict = {k: v for k, v in zip(metrics.keys(), metrics.values())}
-        wandb.log(log_dict)
+        log_metrics(trainer, loaders["devel"], log_prefix="devel_")
 
     @trainer.on(Events.COMPLETED)
     def log_results_end(trainer):
         for L, loader in loaders.items():
-            evaluator.run(loader)
-            metrics = evaluator.state.metrics
-            log_dict = {k: v for k, v in zip(metrics.keys(), metrics.values())}
-            wandb.log(log_dict)
+            log_metrics(trainer, loader, log_prefix=f"{L}_")
 
     return trainer
