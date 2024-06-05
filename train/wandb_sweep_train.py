@@ -18,20 +18,18 @@ from cnn import model_factory, model_stats, save_trained_model
 from train import create_trainer
 from utils import discover_devices, specify_dropout_rate
 
-
-# TODO: FIX THIS!!!
-
 # Global Sweep Configuration
 sweep_config = {
     "method": "bayes",
-    "metrics": {"goal": "minimize", "name": "calc_loss"},
+    "metric": {"goal": "minimize", "name": "loss"},
     "parameters": {
-        "learning_rate": [0.001, 0.0001, 0.0005],
-        "momentum": [0, 1e-6, 1e-3],
-        "nesterov": [True, False],
-        "weight_decay": [0, 1e-6, 1e-12],
-        "epochs": 10,
-        "batch_size": [16, 32, 64]
+        "learning_rate": {"values": [0.001, 0.0001, 0.0005]},
+        "momentum": {"values": [1e-4, 1e-5, 1e-6]},
+        "nesterov": {"values": [True, False]},
+        "weight_decay": {"values": [1e-6, 1e-8, 1e-10]},
+        "epochs": {"values": [10, 15, 20]},
+        "batch_size": {"values": [16, 32, 64]},
+        "dropout_rate": {"values": [0, 0.5]}
     }
 }
 
@@ -73,7 +71,7 @@ equal number of images from each class. xs, sm, lg, dev all refer
 to what fraction is picked for train/devel/test.""",
 )
 @click.option("--cutout_size", type=int, default=167)
-@click.option("--channels", type=int, default=3)
+@click.option("--channels", type=int, default=1)
 @click.option(
     "--n_workers",
     type=int,
@@ -93,12 +91,32 @@ to use multiple GPUs when they are available""",
     help="""The normalize argument controls whether or not, the
 loaded images will be normalized using the arsinh function""",
 )
+@click.option("--num_classes", type=int, default=6)
+@click.option(
+    "--loss",
+    type=click.Choice(
+        [
+            "nll",
+        ],
+        case_sensitive=False,
+    ),
+    default="nll",
+    help="""The loss function to use""",
+)
 @click.option(
     "--crop/--no-crop",
     default=True,
     help="""If True, all images are passed through a cropping
 operation before being fed into the network. Images are cropped
 to the cutout_size parameter""",
+)
+@click.option(
+    "--dropout_rate",
+    type=float,
+    default=None,
+    help="""The dropout rate to use for all the layers in the
+    model. If this is set to None, then the default dropout rate
+    in the specific model is used.""",
 )
 def sweep_init(**kwargs):
     # Copy and log args
@@ -112,6 +130,7 @@ def sweep_init(**kwargs):
     model_args = {
         "cutout_size": args["cutout_size"],
         "channels": args["channels"],
+        "num_classes": args["num_classes"]
     }
 
     if "drp" in args["model_type"].split("_"):
@@ -157,7 +176,7 @@ def sweep_init(**kwargs):
 
     # Define the criterion
     loss_dict = {
-        "nll": nn.NLLloss(),
+        "nll": nn.NLLLoss(),
     }
     criterion = loss_dict[args["loss"]]
 
@@ -176,20 +195,26 @@ def train(model, datasets, criterion, args):
         project=args["experiment_name"],
         id=args["run_id"],
         resume="allow",
+        config={
+            "num_classes": args["num_classes"],
+            "architecture": "CNN"
+        }
     ) as run:
         """Runs the training procedure using MLFlow."""
+        print(wandb.config)
+
         optimizer = opt.SGD(
             model.parameters(),
-            lr=sweep_config.parameters.learning_rate,
-            momentum=sweep_config.parameters.momentum,
-            nesterov=sweep_config.parameters.nesterov,
-            weight_decay=sweep_config.parameters.weight_decay
+            lr=wandb.config.learning_rate,
+            momentum=wandb.config.momentum,
+            nesterov=wandb.config.nesterov,
+            weight_decay=wandb.config.weight_decay
         )
 
         # Create a DataLoader factory based on command-line args
         loader_factory = partial(
             get_data_loader,
-            batch_size=wandb.config.parameters.batch_size,
+            batch_size=wandb.config.batch_size,
             n_workers=args["n_workers"],
         )
 
@@ -197,7 +222,6 @@ def train(model, datasets, criterion, args):
         args["splits"] = {k: len(v.dataset) for k, v in loaders.items()}
 
         # Write the parameters and model stats to W&B
-        args["calc_loss"] = criterion
         args = {**args, **model_stats(model)}
         wandb.log(args)
 
@@ -207,17 +231,19 @@ def train(model, datasets, criterion, args):
         )
 
         # Run trainer and save model state
-        trainer.run(loaders["train"], max_epochs=args["epochs"])
+        trainer.run(loaders["train"], max_epochs=wandb.config.epochs)
         slug = (
             f"{args['experiment_name']}-{args['split_slug']}-"
             f"{run.id}"
         )
 
         model_path = save_trained_model(model, slug)
-        logging.info(f"Saved model to {model_path}")
-
         # Log model as an artifact
-        wandb.log_artifact(model_path)
+        logging.info(f"Saved model to {model_path}")
+        run.log_artifact(model_path)
+
+        # Finish the W&B run!
+        wandb.finish()
 
 
 if __name__ == "__main__":

@@ -206,13 +206,13 @@ def train(**kwargs):
 
         # track hyperparameters and run metadata
         config={
+            "num_classes": args["num_classes"],
+            "architecture": "CNN",
             "parameters": {
                 "learning_rate": args["lr"],
                 "momentum": args["momentum"],
                 "nesterov": args["nesterov"],
                 "weight_decay": args["weight_decay"],
-                "num_classes": args["num_classes"],
-                "architecture": "CNN",
                 "epochs": args["epochs"],
                 "batch_size": args["batch_size"]
             }
