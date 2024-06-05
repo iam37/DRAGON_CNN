@@ -44,6 +44,8 @@ sweep_config = {
 
 @click.command()
 @click.option("--experiment_name", type=str, default="demo")
+@click.option("--entity", type=str, default="dragon_merger_agn")
+@click.option("--n_sweeps", type=int, default=12)
 @click.option(
     "--run_id",
     type=str,
@@ -196,19 +198,22 @@ def sweep_init(**kwargs):
     # Initializing the Sweep
     trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args)
     sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
-    logging.info(
-        f"Sweep ID for this run is given as {sweep_id}. For use with parallel GPUs, \
-        if not auto-detected, use CUDA_VISIBLE_DEVICES=#NUM \
-        wandb agent ${sweep_id}."
-    )
+    logging.info(f"The W&B sweep ID for this run is {sweep_id}.")
 
     # Multiplexing capability.
+    p_args = {
+        "sweep_id": sweep_id,
+        "function": trainer_func,
+        "project": args["experiment_name"],
+        "entity": args["entity"],
+        "count": (args["n_sweeps"] / args["n_workers"])
+    }
+    processes = []
     if args["device"] == "cpu":  # Multiplex given N cpus
         num_agents = min(mp.cpu_count(), args["n_workers"])
         logging.info(f"Parallelizing sweeps over {num_agents} CPUs.")
-        processes = []
         for _ in range(num_agents):
-            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 4})
+            p = mp.Process(target=wandb.agent, kwargs=p_args)
             p.start()  # Start the new child process
             processes.append(p)
 
@@ -218,10 +223,9 @@ def sweep_init(**kwargs):
         num_agents = torch.cuda.device_count()
         devices = (torch.cuda.get_device_name(i) for i in range(num_agents))
         logging.info(f"Parallelizing sweeps over {num_agents} agents.")
-        processes = []
         for n in devices:
             os.environ['CUDA_VISIBLE_DEVICES'] = n
-            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 4})
+            p = mp.Process(target=wandb.agent, kwargs=p_args)
             p.start()  # Start the new child process
             processes.append(p)
 
@@ -229,12 +233,13 @@ def sweep_init(**kwargs):
             p.join()  # Thread join to wait for each to finish execution.
 
     # Housekeeping
-    sweep_id_escaped = subprocess.list2cmdline([sweep_id])
-    result = subprocess.run(f'wandb sweep --cancel {sweep_id_escaped}', shell=True)
-    if result.returncode != 0:
-        logging.info(f"ERROR: Failed to cancel sweep {sweep_id}.")
-    else:
-        logging.info(f"All runs on sweep ID f{sweep_id} have terminated and sweep is now canceled.")
+    sweep_path = f'"{args["entity"]} / {args["experiment_name"]} / {sweep_id}"'
+    sweep_id_escaped = subprocess.list2cmdline([sweep_path])
+    try:
+        result = subprocess.run(f'wandb sweep --cancel {sweep_id_escaped}', shell=True, check=True)
+        logging.info(f"All runs on sweep ID {sweep_id} have terminated and sweep is now canceled.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"ERROR: Failed to cancel sweep {sweep_id}: {e}")
 
     return
 
@@ -246,11 +251,19 @@ def train(model, datasets, criterion, args):
         id=args["run_id"],
         resume="allow",
         group="DDP",
+        entity=args["entity"],
         config={
             "num_classes": args["num_classes"],
             "architecture": "CNN"
         }
     ) as run:
+        # Overriding run name if it is specified.
+        if args["run_name"] is not None:
+            name_str = "_".join(
+                [f"{key}_{wandb.config[key]}" for key in wandb.config.keys()[2:]]
+            )
+            run.name = args["run_name"] + "_" + name_str
+
         optimizer = opt.SGD(
             model.parameters(),
             lr=wandb.config.learning_rate,
