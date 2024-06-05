@@ -144,28 +144,60 @@ class DatasetCreator:
             pass
     def extract_single_galaxies(self, galaxy_filepath):
         self.singleton_images = []
-        for image in glob.glob(galaxy_filepath + "*.fits"):
+        self.singleton_names = []
+        for ii, image in tqdm(enumerate(glob.glob(galaxy_filepath + "*.fits"))):
             with fits.open(image, memmap = False) as hdul:
-                img = hdul[0].data
-                img = self.crop_center(img, 60, 60)
+                img = hdul[1].data
+                img = self.crop_center(img, 94, 94)
                 self.singleton_images.append(img)
-        self.singleton_names = [(s[:s.rfind("\\")], s[s.rfind("\\") + 1:-5]) if s.rfind("\\") != -1 else (s, "") for s in glob.glob(galaxy_filepath + "*.fits")]
+                last_backslash_index = image.rfind('//')
+                
+                # Split the string from the last occurrence of the backslash
+                if last_backslash_index != -1:
+                    #parts_before_last_backslash.append(image[:last_backslash_index])
+                    self.singleton_names.append(image[last_backslash_index + 1:-4])
+                else:
+                    #print("Didnt work :(")
+                    #parts_before_last_backslash.append(image)
+                    self.singleton_names.append(f"Galaxy_{ii}")
+    def extract_single_point_sources(self, point_source_filepath):
+        self.single_point_sources = []
+        self.single_point_names = []
+        for ii, image in tqdm(enumerate(glob.glob(point_source_filepath + "*.fits"))):
+            with fits.open(image, memmap = False) as hdul:
+                img = hdul[1].data
+                img = self.crop_center(img, 94, 94)
+                self.single_point_sources.append(img)
+                self.single_point_names.append(f"{ii}")
+                    
     def extract_rotated_AGN(self, rotated_AGN_filepath_prefix):
-        asec_separations = ["2.0","1.9", "1.8", "1.7", "1.6", "1.4", "1.3", "1.2", "1.1","1.0", "0.8", "0.7", "0.6", "0.5"]
+        #asec_separations = ["2.0","1.9", "1.8", "1.7", "1.6", "1.4", "1.3", "1.2", "1.1","1.0", "0.8", "0.7", "0.6", "0.5"]
+        asec_separations = np.arange(0.5, 2.5, 0.05)
         self.rotated_AGN = []
-        for j in tqdm(asec_separations):
-            for images in glob.glob(rotated_AGN_filepath_prefix + j + "_asec_separations/*.fits"):
-
-                with fits.open(images, memmap = False) as hdu1:
-                    comp_img = hdu1[0].data
-                    comp_img = self.crop_center(comp_img, 60, 60)
-                    comp_img = np.expand_dims(comp_img, axis = -1)
-
-                self.rotated_AGN.append(comp_img)
-            self.AGN_names = [(s[:s.rfind("\\")], s[s.rfind("\\") + 1:-5]) if s.rfind("\\") != -1 else (s, "") for s in glob.glob(rotated_AGN_filepath_prefix + j + "_asec_separations/*.fits")]
+        self.AGN_names = []
+        for j in tqdm(np.round(asec_separations, 2)):
+            for k, image in enumerate(glob.glob(rotated_AGN_filepath_prefix + str(j) + "_arcsecond_separations/downloaded_images/*.fits")):
+                with fits.open(image, memmap = False) as hdul:
+                    comp_img = hdul[1].data
+                    comp_img = self.crop_center(comp_img, 94, 94)
+                    #comp_img = np.expand_dims(comp_img, axis = -1)
+    
+                    self.rotated_AGN.append(comp_img)
+                    # Find the last occurrence of the backslash
+                    last_backslash_index = image.rfind('//')
+                    
+                    # Split the string from the last occurrence of the backslash
+                    if last_backslash_index != -1:
+                        #parts_before_last_backslash.append(image[:last_backslash_index])
+                        self.AGN_names.append(image[last_backslash_index + 1:])
+                    else:
+                        #print("Didnt work :(")
+                        #parts_before_last_backslash.append(image)
+                        self.AGN_names.append(f"AGN_{k}")
 
     def convolve_galaxy_AGN(self, galaxy_img, AGN_img):
-        convolved_image = convolve_fft(AGN_img, galaxy_img)
+        #convolved_image = convolve_fft(AGN_img, galaxy_img)
+        convolved_image = galaxy_img + AGN_img
         return convolved_image 
     def create_convolution(self, fits_filepath = "offset_AGN_images/"):
         if not exists(fits_filepath):
@@ -173,11 +205,19 @@ class DatasetCreator:
         for ii, galaxy_img in tqdm(enumerate(self.singleton_images)):
             for j, AGN_img in enumerate(self.rotated_AGN):
                 convolved_image = self.convolve_galaxy_AGN(galaxy_img, AGN_img)
-                AGN_name = self.AGN_names[j]
-                galaxy_name = self.singleton_names[ii]
+                #print(np.shape(convolved_image))
+                #AGN_name = self.AGN_names[j]
+                #galaxy_name = self.singleton_names[ii]
                 hdu = fits.PrimaryHDU(convolved_image)
                 hdul = fits.HDUList([hdu])
-                hdul.writeto(f"{fits_filepath}{galaxy_name}_with_AGN_{AGN_name}.fits" , overwrite=True)
+                hdul.writeto(f"{fits_filepath}{ii}_with_AGN_{j}.fits" , overwrite=True)
+            """for k, single_point_source in enumerate(self.single_point_sources):
+                convolved_image = self.convolve_galaxy_AGN(galaxy_img, single_point_source)
+                single_name = self.single_point_names[k]
+                hdu = fits.PrimaryHDU(convolved_image)
+                hdul = fits.HDUList([hdu])
+                hdul.writeto(f"{fits_filepath}{galaxy_name}_with_point_source_{single_name}.fits", overwrite = True)"""
+                
 
 
 

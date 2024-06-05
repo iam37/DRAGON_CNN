@@ -274,23 +274,26 @@ def find_single_AGN(singles_to_find = 1000):
     home_directory = os.path.expanduser("~")
     os.chdir(f"{home_directory}/Dropbox/First_Year_at_Yale/Summer_2024/")
     print(os.getcwd())
-    singles_filepath = "entire_bands/HSC-G/fall_equatorial/downloaded_images/"
+    singles_filepath = "entire_bands/HSC-G/spring_equatorial/downloaded_images/"
     for image in tqdm(glob.glob(f"{singles_filepath}*.fits")):
-        if counter == singles_to_find:
-            break
-        with fits.open(image) as hdul:
-            img = hdul[1].data
-            img = crop_center(img, 94, 94)
-            fit_params = dualAGN_3DPSFFit(img, image, radius = 42)
-            if fit_params[13] == False:
-                destination_filepath = "DRAGON_CNN/data_preprocessing/training_datasets/single_AGN_datasets/confirmed_single_AGN/"
-                if not exists(destination_filepath):
-                    os.makedirs(destination_filepath)
-                    logging.info(f"{destination_filepath} created (did not exists before)")
-                shutil.copy(image, destination_filepath)
-            else:
-                continue
-            counter+=1
+        try:
+            if counter == singles_to_find:
+                break
+            with fits.open(image, memmap = False, ignore_missing_simple=True) as hdul:
+                img = hdul[1].data
+                img = crop_center(img, 94, 94)
+                fit_params = dualAGN_3DPSFFit(img, image, radius = 42)
+                if fit_params[13] == False:
+                    destination_filepath = "DRAGON_CNN/data_preprocessing/training_datasets/single_AGN_datasets/confirmed_single_AGN/"
+                    if not exists(destination_filepath):
+                        os.makedirs(destination_filepath)
+                        logging.info(f"{destination_filepath} created (did not exists before)")
+                    shutil.copy(image, destination_filepath)
+                else:
+                    counter+=1
+                    continue
+        except OSError:
+            print(f"{image} is not in the valid FITS format, moving on...")
 find_single_AGN()            
 
 
