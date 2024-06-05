@@ -20,10 +20,11 @@ from cnn import model_factory, model_stats, save_trained_model
 from train import create_trainer
 from utils import discover_devices, specify_dropout_rate
 
-# Global Sweep Configuration
+# Global Sweep Configuration. This also effects early stopping
+# for bad runs!
 sweep_config = {
     "method": "bayes",
-    "metric": {"goal": "minimize", "name": "loss"},
+    "metric": {"goal": "maximize", "name": "accuracy"},
     "parameters": {
         "learning_rate": {"values": [0.001, 0.0001, 0.0005]},
         "momentum": {"values": [1e-4, 1e-5, 1e-6]},
@@ -32,6 +33,11 @@ sweep_config = {
         "epochs": {"values": [10, 15, 20]},
         "batch_size": {"values": [16, 32, 64]},
         "dropout_rate": {"values": [0, 0.5]}
+    },
+    "early_terminate": {
+        "type": "hyperband",
+        "eta": 2,
+        "min_iter": 3
     }
 }
 
@@ -200,7 +206,7 @@ def sweep_init(**kwargs):
         logging.info(f"Parallelizing sweeps over {num_agents} CPUs")
         processes = []
         for _ in range(num_agents):
-            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 10})
+            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 4})
             p.start()  # Start the new child process
             processes.append(p)
 
@@ -208,23 +214,25 @@ def sweep_init(**kwargs):
             p.join()  # Thread join to wait for each to finish execution.
     elif args["device"] == "cuda":  # Multiplexing using GPUs.
         num_agents = torch.cuda.device_count()
+        devices = (torch.cuda.get_device_name(i) for i in range(num_agents))
         logging.info(f"Parallelizing sweeps over {num_agents} agents")
         processes = []
-        for n in range(num_agents):
+        for n in devices:
             os.environ['CUDA_VISIBLE_DEVICES'] = n
-            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 10})
+            p = mp.Process(target=wandb.agent, kwargs={"sweep_id": sweep_id, "function": trainer_func, "count": 4})
             p.start()  # Start the new child process
             processes.append(p)
 
         for p in processes:
             p.join()  # Thread join to wait for each to finish execution.
 
+    logging.info(f"All sweeps on sweep ID f{sweep_id} have terminated!")
+
 
 
 def train(model, datasets, criterion, args):
     # Initializing W&B run
     with wandb.init(
-        project=args["experiment_name"],
         id=args["run_id"],
         resume="allow",
         group="DDP",
