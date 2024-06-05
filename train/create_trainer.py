@@ -17,7 +17,7 @@ def create_trainer(model, optimizer, criterion, loaders, device):
         "accuracy": Accuracy(),
         "precision": Precision(average=False),
         "loss": Loss(criterion),
-        "confusion_matrix": ConfusionMatrix(num_classes=wandb.config.parameters["num_classes"], output_transform=lambda x: x)
+        "confusion_matrix": ConfusionMatrix(num_classes=wandb.config["num_classes"], output_transform=lambda x: x)
     }
 
     evaluator = create_supervised_evaluator(
