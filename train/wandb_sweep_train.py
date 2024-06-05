@@ -7,6 +7,7 @@ from functools import partial
 
 import wandb
 import os
+import subprocess
 
 import torch
 import torch.nn as nn
@@ -228,9 +229,14 @@ def sweep_init(**kwargs):
             p.join()  # Thread join to wait for each to finish execution.
 
     # Housekeeping
-    api = wandb.Api()
-    api.sweep(sweep_id, state='canceled')
-    logging.info(f"All runs on sweep ID f{sweep_id} have terminated and sweep is now canceled.")
+    sweep_id_escaped = subprocess.list2cmdline([sweep_id])
+    result = subprocess.run(f'wandb sweep --cancel {sweep_id_escaped}', shell=True)
+    if result.returncode != 0:
+        logging.info(f"ERROR: Failed to cancel sweep {sweep_id}.")
+    else:
+        logging.info(f"All runs on sweep ID f{sweep_id} have terminated and sweep is now canceled.")
+
+    return
 
 
 
