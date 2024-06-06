@@ -209,7 +209,7 @@ def sweep_init(**kwargs):
         "count": (args["n_sweeps"] / args["n_workers"])
     }
     processes = []
-    if args["device"] == "cpu":  # Multiplex given N cpus
+    if args["device"] == "cpu" and args["parallel"]:  # Multiplex given N cpus
         num_agents = min(mp.cpu_count(), args["n_workers"])
         logging.info(f"Parallelizing sweeps over {num_agents} CPUs.")
         for _ in range(num_agents):
@@ -219,7 +219,7 @@ def sweep_init(**kwargs):
 
         for p in processes:
             p.join()  # Thread join to wait for each to finish execution.
-    elif args["device"] == "cuda":  # Multiplexing using GPUs.
+    elif args["device"] == "cuda" and args["parallel"]:  # Multiplexing using GPUs.
         num_agents = torch.cuda.device_count()
         devices = (torch.cuda.get_device_name(i) for i in range(num_agents))
         logging.info(f"Parallelizing sweeps over {num_agents} agents.")
@@ -233,11 +233,11 @@ def sweep_init(**kwargs):
             p.join()  # Thread join to wait for each to finish execution.
 
     # Housekeeping
-    sweep_path = f'"{args["entity"]} / {args["experiment_name"]} / {sweep_id}"'
-    sweep_id_escaped = subprocess.list2cmdline([sweep_path])
+    sweep_path = f'{args["entity"]}/{args["experiment_name"]}/{sweep_id}'
     try:
-        result = subprocess.run(f'wandb sweep --cancel {sweep_id_escaped}', shell=True, check=True)
+        result = subprocess.run(['wandb', 'sweep', '--cancel', sweep_path], check=True, capture_output=True, text=True)
         logging.info(f"All runs on sweep ID {sweep_id} have terminated and sweep is now canceled.")
+        logging.info(result.stdout)
     except subprocess.CalledProcessError as e:
         logging.error(f"ERROR: Failed to cancel sweep {sweep_id}: {e}")
 
