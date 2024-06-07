@@ -42,6 +42,13 @@ sweep_config = {
     }
 }
 
+
+def initialize_and_run_agent(device, p_args):
+    if device is not None:
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
+    wandb.agent(**p_args)
+
+
 @click.command()
 @click.option("--experiment_name", type=str, default="demo")
 @click.option("--entity", type=str, default="dragon_merger_agn")
@@ -219,13 +226,13 @@ def sweep_init(**kwargs):
 
         for p in processes:
             p.join()  # Thread join to wait for each to finish execution.
+
     elif args["device"] == "cuda" and args["parallel"]:  # Multiplexing using GPUs.
         num_agents = torch.cuda.device_count()
-        devices = (torch.cuda.get_device_name(i) for i in range(num_agents))
         logging.info(f"Parallelizing sweeps over {num_agents} agents.")
-        for n in devices:
-            os.environ['CUDA_VISIBLE_DEVICES'] = n
-            p = mp.Process(target=wandb.agent, kwargs=p_args)
+
+        for i in range(num_agents):
+            p = mp.Process(target=initialize_and_run_agent, args=(i, p_args))
             p.start()  # Start the new child process
             processes.append(p)
 
@@ -234,8 +241,9 @@ def sweep_init(**kwargs):
 
     # Housekeeping
     sweep_path = f'{args["entity"]}/{args["experiment_name"]}/{sweep_id}'
+    sweep_list = ['wandb', 'sweep', '--cancel', sweep_path]
     try:
-        result = subprocess.run(['wandb', 'sweep', '--cancel', sweep_path], check=True, capture_output=True, text=True)
+        result = subprocess.run(subprocess.list2cmdline(sweep_list), check=True, capture_output=True, text=True)
         logging.info(f"All runs on sweep ID {sweep_id} have terminated and sweep is now canceled.")
         logging.info(result.stdout)
     except subprocess.CalledProcessError as e:

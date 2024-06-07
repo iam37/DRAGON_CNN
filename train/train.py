@@ -183,6 +183,7 @@ def train(**kwargs):
             normalize=args["normalize"],
             transforms=T,
             split=k,
+            num_classes=args["num_classes"]
         )
         for k in splits
     }
