@@ -3,6 +3,8 @@ import tensorflow as tf
 from tqdm import tqdm
 from astropy.io import fits
 import glob
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def crop_center(img, cropx, cropy):
 
@@ -15,7 +17,8 @@ def crop_center(img, cropx, cropy):
 
 def augment_dataset(images, num_augmented_images=20):
     augmented_images = []
-
+    if images.ndim == 3:
+        images = images[..., np.newaxis]
     for i, image in tqdm(enumerate(images)):
         augmented_images.append(image)
 
@@ -32,197 +35,95 @@ def augment_dataset(images, num_augmented_images=20):
 
     return augmented_images
 
-def compileRealImages(composite_filepath = "dual_finder/dual_finder/preprocess_data/Double_AGN_CNN/simulated_double_AGN_images_spring/",
-                     spring_singles_filepath = "dual_finder/dual_finder/preprocess_data/confirmed_single_AGN_spring/",
-                     singles_fall_filepath = "dual_finder/dual_finder/preprocess_data/confirmed_single_AGN_fall/"):
-    asecSeparations = ["2.0","1.9", "1.8", "1.7", "1.6", "1.4", "1.3", "1.2", "1.1","1.0", "0.8", "0.7", "0.6", "0.5"]
-    composite_images = []
-    singleImages = []
-    doubleAGNLabels = []
-    singleAGNLabels = []
-    for j in tqdm(asecSeparations):
-        for images in glob.glob(composite_filepath + j + "_asec_separations/*.fits"):
+def create_dataset(empty_sky_filepath, single_image_filepath, dual_image_filepath, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
+    empty_sky_images = []
+    empty_sky_labels = []
+    logging.info("Loading empty sky images...")
+    for empty_sky_files in tqdm(glob.glob(empty_sky_filepath+"*.fits")):
+        with fits.open(empty_sky_files, memmap = False) as hdul:
+            img = hdul[1].data
+            img = crop_center(img, 94, 94)
+            empty_sky_images.append(img)
+            #empty_sky_labels.append("empty_sky")
+    #print(np.shape(empty_sky_images))
+    empty_sky_images = np.asarray(empty_sky_images)
+    empty_sky_images = augment_dataset(empty_sky_images, num_augmented_images = 3)
+    for _ in empty_sky_images:
+        empty_sky_labels.append("empty_sky")
+    #empty_sky_images = empty_sky_images[:, :, :, -1]
+    empty_sky_labels = np.asarray(empty_sky_labels)
+    print(f"Shape of empty_sky_images: {empty_sky_images.shape}")
+    if len(empty_sky_images) != len(empty_sky_labels):
+        print(f"ERROR: empty sky images has length {len(empty_sky_images)} while empty sky labels has length {len(empty_sky_labels)}")
 
-            hdu1 = fits.open(images)
-            comp_img = hdu1[0].data
-            comp_img = crop_center(comp_img, 60, 60)
-            comp_img = np.expand_dims(comp_img, axis = -1)
-
-            composite_images.append(comp_img)
-            hdu1.close()
-
-
-    print("Compiling: confirmed_single_AGN_spring")
-    for singles_spring in tqdm(glob.glob(spring_singles_filepath + "*.fits")):
-        hdu2 = fits.open(singles_spring)
-        img_spring = fits.getdata(singles_spring)
-
-        img_spring = crop_center(img_spring, 60, 60)
-        img_spring = np.expand_dims(img_spring, axis=-1)
-
-        singleImages.append(img_spring)
-        hdu2.close()
-
-    print("Compiling: confirmed_single_AGN_fall")
-    for singles_fall in tqdm(glob.glob(singles_fall_filepath + "*.fits")):
-        hdu3 = fits.open(singles_fall)
-        img_fall = fits.getdata(singles_fall)
-
-        img_fall = crop_center(img_fall, 60, 60)
-        img_fall = np.expand_dims(img_fall, axis = -1)
-        singleImages.append(img_fall)
-        hdu3.close()
-    for i in range(len(composite_images)):
-        doubleAGNLabels.append("double AGN")
-    for j in range(len(singleImages)):
-        singleAGNLabels.append("single AGN")
-    print(f"Shape of composite images: {np.shape(composite_images)}")
-    print(f"Shape of all single real AGN images: {np.shape(singleImages)}")
-    print(f"Double labels:{len(doubleAGNLabels)}")
-    print(f"Single labels: {len(singleAGNLabels)}")
-    return singleImages, composite_images
-def create_dataset(filepaths = ("dual_finder/dual_finder/preprocess_data/Gaussian_simulated_images/single_point_sources_real_psf/", 
-                                "dual_finder/dual_finder/preprocess_data/Gaussian_simulated_images/double_point_sources_real_psf/", 
-                                "dual_finder/dual_finder/preprocess_data/Double_AGN_CNN/simulated_double_AGN_images_spring/",
-                                "dual_finder/dual_finder/preprocess_data/confirmed_single_AGN_spring/",
-                                "dual_finder/dual_finder/preprocess_data/confirmed_single_AGN_fall/")): #Remember to change original code to account for this change!
-    single_sim_filepath, double_sim_filepath, composite_filepath, spring_singles_filepath, singles_fall_filepath = filepaths
-    simulatedGaussianSingle = []
-    simulatedGaussianDouble = []
-    #"dual_finder/dual_finder/preprocess_data/Gaussian_simulated_images/single_point_sources_real_psf/
-    for singleImage in tqdm(glob.glob(single_sim_filepath + "*.fits")):
-        # Read the FITS data without loading it into memory
-        with fits.open(singleImage, memmap = False) as hdul:
-            img = hdul[0].data
-            img = crop_center(img, 60, 60)
-        simulatedGaussianSingle.append(img)
-
-    for doubleImage in tqdm(glob.glob(double_sim_filepath + "*.fits")):
-        with fits.open(doubleImage, memmap = False) as hdul:
-            img = hdul[0].data
-            img = crop_center(img, 60, 60)
-        simulatedGaussianDouble.append(img)
-    simulatedGaussianSingle = np.asarray([arr.reshape((60, 60, 1)) for arr in simulatedGaussianSingle])
-    simulatedGaussianDouble = np.asarray([arr.reshape((60, 60, 1)) for arr in simulatedGaussianDouble])
+    logging.info("Loading single AGN images...")
+    single_images = []
+    single_labels = []
+    for single_image in tqdm(glob.glob(single_image_filepath+"*.fits")):
+        with fits.open(single_image) as hdul:
+            img = hdul[1].data
+            img = crop_center(img, 94, 94)
+            single_images.append(img)
+            #single_labels.append("single_AGN")
+    single_images = np.asarray(single_images)
+    single_images = augment_dataset(single_images, num_augmented_images = 10)
+    for _ in single_images:
+        single_labels.append("single_AGN")
+    #single_images = single_images[:, :, :, -1]
+    single_labels = np.asarray(single_labels)
+    if len(single_images) != len(single_labels):
+        print(f"ERROR: single images has length {len(single_images)} while single labels has length {len(single_labels)}")
 
 
-    #loading real images
-    real_singleImages, composite_images = compileRealImages()
-    augmented_single_images = augment_dataset(real_singleImages, num_augmented_images = 15)
-    #augmented_double_images = augment_dataset(composite_images)
+    logging.info("Loading dual AGN images...")
+    dual_images = []
+    dual_labels = []
+    for dual_image in glob.glob(dual_image_filepath+"*.fits"):
+        try:
+            with fits.open(dual_image) as hdul:
+                img = hdul[0].data
+                img = crop_center(img, 94, 94)
+                dual_images.append(img)
+                dual_labels.append("dual_AGN")
+        except OSError:
+            print(f"{dual_image} is corrupted or empty, moving on...")
+            continue
+    #dual_images = augment_dataset(dual_images, num_augmented_images = 5)
+    #dual_images = dual_images[:, :, :, -1]
+    dual_images = np.expand_dims(dual_images, axis = -1)
+    dual_images = np.asarray(dual_images)
+    dual_labels = np.asarray(dual_labels)
+    if len(single_images) != len(single_labels):
+        print(f"ERROR: single images has length {len(single_images)} while single labels has length {len(single_labels)}")
 
-    augmented_single_images = augmented_single_images[:,:,:,-1]
-    #augmented_double_images = augmented_single_images[:,:,:,-1]
-    print(f"Shape of augmented single images: {np.shape(augmented_single_images)}")
-    #print(f"Shape of augmented double images: {np.shape(augmented_double_images)}")
+    # Now make splits of the dataset into training, testing, and validation metrics. The defaults for this function are train = 0.65, val = 0.2, test = 0.15
 
-    # Tensorflow's Sequential model accepts image arrays of the shape (batch_size, x_size, y_size, channels), so we need to add a channels dimension
-    # since we are working with monochromatic data here, we only need a value of 1 in the channel's dimension.
-    augmented_single_images = np.expand_dims(augmented_single_images, axis = -1)
+    total_images = np.concatenate((empty_sky_images, single_images, dual_images), axis = 0)
+    total_labels = np.concatenate((empty_sky_labels, single_labels, dual_labels), axis = 0)
+    print(f"Total images: {np.shape(total_images)}")
+    print(f"Total labels: {np.shape(total_labels)}")
 
-    all_singleImages = np.concatenate((augmented_single_images, simulatedGaussianSingle), axis = 0)
-    all_single_labels = []
+    np.random.seed(42)
+    indices = np.arange(total_images.shape[0])
+    np.random.shuffle(indices)
 
-    nothing_images = []
-    for nothing_files in glob.glob(f"HSC_survey_bands/entire_bands/{fltr}/empty_space_images/*.fits"):
-        with fits.open(nothing_files, memmap = False) as hdu5:
-            img = hdu5[1].data
-            img = crop_center(img, 60, 60)
-            img = np.expand_dims(img, axis = -1)
-            nothing_images.append(img)
-    nothing_images = np.expand_dims(augment_dataset(nothing_images, num_augmented_images = 15), axis = -1)
-    nothing_labels = []
-    for _ in range(len(nothing_images)):
-        nothing_labels.append("nothing/indeterminate")
+    shuffled_images = total_images[indices]
+    shuffled_labels = total_labels[indices]
 
-    # Create labels to assign all training and validation images. The two possible categories an image can fall into for this
-    # demonstration is a 'single AGN' or a 'double AGN'.
+    train_size = int(train * total_images.shape[0])
+    val_size = int(val * total_images.shape[0])
+    test_size = total_images.shape[0] - train_size - val_size
 
-    for _ in range(len(all_singleImages)):
-        all_single_labels.append("single AGN")
-    all_doubleImages = np.concatenate((composite_images, simulatedGaussianDouble), axis = 0)
+    train_images = shuffled_images[:train_size]
+    train_labels = shuffled_labels[:train_size]
 
-    all_double_labels = []
-    for _ in range(len(all_doubleImages)):
-        all_double_labels.append("double AGN")
+    val_images = shuffled_images[train_size:train_size + val_size]
+    val_labels = shuffled_labels[train_size:train_size + val_size]
 
-    
+    test_images = shuffled_images[train_size + val_size:]
+    test_labels = shuffled_labels[train_size + val_size:]
 
-    modelA_training_data = np.concatenate((all_singleImages, all_doubleImages), axis = 0)
-    modelB_training_data_1 = np.concatenate((simulatedGaussianSingle, simulatedGaussianDouble, nothing_images), axis = 0)
-    modelB_training_data_2 = np.concatenate((augmented_single_images, composite_images, nothing_images), axis = 0)
-
-    # The percentage of total images used for training. The rest will be used in the validation dataset to test the results.
-    train_ratio = 0.75
-
-    modelA_labels = np.concatenate((all_single_labels, all_double_labels, nothing_labels), axis = 0)
-
-    # Model B is trained in two separate iterations, so we create separate labels for each step.
-    modelB_labels_simulated = []
-    for _ in range(len(simulatedGaussianSingle)):
-        modelB_labels_simulated.append("single AGN") 
-    for _ in range(len(simulatedGaussianDouble)):
-        modelB_labels_simulated.append("double AGN")
-    modelB_labels_simulated = np.concatenate((modelB_labels_simulated, nothing_labels), axis = 0)
-
-    modelB_labels_real = []
-    print("shape of augmented single images: ", np.shape(augmented_single_images))
-    for _ in tqdm(range(len(augmented_single_images))):
-        modelB_labels_real.append("single AGN")
-    for _ in range(len(composite_images)):
-        modelB_labels_real.append("double AGN")
-    modelB_labels_real = np.concatenate((modelB_labels_real, nothing_labels), axis = 0)
-    modelB_labels_real = np.asarray(modelB_labels_real)
-    print(f"modelB_labels_real: {modelB_labels_real}")
-
-    # Shuffle Model A
-    indicesA = np.random.permutation(len(modelA_training_data))
-    shuffled_modelA_dataset = modelA_training_data[indicesA]
-    shuffled_modelA_labels = modelA_labels[indicesA]
-    
-    # Shuffle Model B (Simulated)
-    indicesB1 = np.random.permutation(len(modelB_training_data_1))
-    shuffled_modelB_1_dataset = modelB_training_data_1[indicesB1]
-    shuffled_modelB_labels_simulated = modelB_labels_simulated[indicesB1]
-    
-    # Shuffle Model B (Real)
-    indicesB2 = np.random.permutation(len(modelB_training_data_2))
-    shuffled_modelB_2_dataset = modelB_training_data_2[indicesB2]
-    shuffled_modelB_labels_real = modelB_labels_real[indicesB2]
-
-    split_index_modelA = int(train_ratio * len(shuffled_modelA_dataset))
-    train_dataset_modelA = shuffled_modelA_dataset[:split_index_modelA]
-    train_labels_modelA = shuffled_modelA_labels[:split_index_modelA]
-    validation_dataset_modelA = shuffled_modelA_dataset[split_index_modelA:]
-    validation_labels_modelA = shuffled_modelA_labels[split_index_modelA:]
-    
-    # Splitting the shuffled Model B (Simulated) data
-    split_index_modelB = int(train_ratio * len(shuffled_modelB_1_dataset))
-    train_dataset_modelB_1 = shuffled_modelB_1_dataset[:split_index_modelB]
-    train_labels_modelB_1 = shuffled_modelB_labels_simulated[:split_index_modelB]
-    validation_dataset_modelB_1 = shuffled_modelB_1_dataset[split_index_modelB:]
-    validation_labels_modelB_simulated = shuffled_modelB_labels_simulated[split_index_modelB:]
-    
-    # Splitting the shuffled Model B (Real) data
-    split_index_modelB2 = int(train_ratio * len(shuffled_modelB_2_dataset))
-    train_dataset_modelB_2 = shuffled_modelB_2_dataset[:split_index_modelB2]
-    train_labels_modelB_2 = shuffled_modelB_labels_real[:split_index_modelB2]
-    validation_dataset_modelB_2 = shuffled_modelB_2_dataset[split_index_modelB2:]
-    validation_labels_modelB_2 = shuffled_modelB_labels_real[split_index_modelB2:]
-
-    
-
-    print(f"Shape of real model B training data: {np.shape(train_dataset_modelB_2)}")
-    print(f"Shape of real model B training labels: {np.shape(train_labels_modelB_2)}")
-    print(f"Shape of real model B validation data: {np.shape(validation_dataset_modelB_2)}")
-    print(f"Shape of real model B validation labels: {np.shape(validation_labels_modelB_2)}")
-
-    print(f"Shape of simulated model B training data: {np.shape(train_dataset_modelB_1)}")
-    print(f"Shape of simulated model B training labels: {np.shape(train_labels_modelB_1)}")
-    print(f"Shape of simulated model B validation data: {np.shape(validation_dataset_modelB_1)}")
-    print(f"Shape of simulated model B validation labels: {np.shape(validation_labels_modelB_simulated)}")
-
-    return (train_dataset_modelB_1, train_labels_modelB_1), (validation_dataset_modelB_1, validation_labels_modelB_simulated), (train_dataset_modelB_2, train_labels_modelB_2), (validation_dataset_modelB_2, validation_labels_modelB_2), (train_dataset_modelA, train_labels_modelA), (validation_dataset_modelA, validation_labels_modelA)
+    return (train_images, train_labels), (val_images, val_labels), (test_images, test_labels)
 
 def make_datasets_other_bands(fltr, model = 'B'):
     flux_ratio_prefix = np.round(np.arange(0.1, 1.0, 0.1), 1)

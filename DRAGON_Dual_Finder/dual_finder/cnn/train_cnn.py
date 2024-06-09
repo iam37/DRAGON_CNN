@@ -31,7 +31,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class DualFinder:
-    def __init__(self, train_dataset, validation_dataset, image_shape, initial_labels, validation_labels, epoch, batchSize, learningRate, num_layers, model_type, display_architecture = True, evaluation_set = None, evaluation_labels = None):
+    def __init__(self, train_dataset, validation_dataset, image_shape, initial_labels, validation_labels, epoch, batchSize, learningRate, num_classes, model_type, display_architecture = True, evaluation_set = None, evaluation_labels = None):
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
         self.initial_labels = initial_labels
@@ -43,7 +43,7 @@ class DualFinder:
         self.evaluation_set = evaluation_set
         self.evaluation_labels = evaluation_labels
         self.batchSize = batchSize
-        self.num_layers = num_layers
+        self.num_classes = num_classes
         self.model_type = model_type
         self.display_architecture = display_architecture
 
@@ -95,7 +95,7 @@ class DualFinder:
         feature_instance = FeatureMapCallback(feature_map_saver, batch_freq = 100)
         return feature_instance
     def encode_labels(self, initial_labels, validation_labels):
-        label_mapping = {'single AGN': 0, 'double AGN': 1}
+        label_mapping = {'empty_sky': 0, 'single_AGN': 1, 'dual_AGN': 2}
         print(initial_labels)
         print(validation_labels)
         if isinstance(initial_labels, np.ndarray):
@@ -115,10 +115,11 @@ class DualFinder:
         val_labels_one_hot = val_labels_one_hot.astype('float32')
         return train_labels_one_hot, val_labels_one_hot
         
-    def trainCNN(self, dropout_rate = 0.32523228915885216, save_feature_maps = True, model_filepath = "temp/"):
+    def trainCNN(self, dropout_rate = 0.32523228915885216, save_feature_maps = True, model_filepath = "../saved_dual_finder_models/"):
         os.environ["CUDA_VISIBLE_DEVICES"]="0"
-        class_names = ['single AGN', 'double AGN']
-        image_shape = (60, 60, 1)
+        #class_names = ['single AGN', 'double AGN']
+        class_names = ["empty_sky", "single_AGN", "dual_AGN"]
+        #image_shape = (94, 94, 1)
 
         #Another method of numerical labeling that ensures that 'double AGN' is the positive class
         train_labels_one_hot, val_labels_one_hot = self.encode_labels(self.initial_labels, self.validation_labels)
@@ -127,16 +128,16 @@ class DualFinder:
         class_indices = np.argmax(train_labels_one_hot, axis = 1) #for creating a dictionary of class weights meant to prevent overfitting the dataset
         class_weights = compute_class_weight('balanced', classes = np.unique(class_indices), y = class_indices)
         class_weightsDict = dict(enumerate(class_weights))
-        num_classes = 2
-        if self.model_type == 'modelB':
+        #num_classes = 2
+        if self.model_type.lower() == 'dualfinder':
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=FutureWarning)
                 warnings.filterwarnings("ignore", category=UserWarning)
                 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-                model_creator = ModelCreator(image_shape, self.learningRate, num_classes, display_architecture = self.display_architecture)
-                model = model_creator.create_model(dropout_rate)  # Build the model
-                model.build((None,) + image_shape)
+                model_creator = ModelCreator(self.image_shape, self.learningRate, self.num_classes, display_architecture = self.display_architecture)
+                model = model_creator.create_expanded_model(dropout_rate)  # Build the model
+                model.build((None,) + self.image_shape)
                 model.summary()
                 if not exists(model_filepath):
                     os.makedirs(model_filepath)
@@ -292,7 +293,7 @@ class DualFinder:
 
     def trainFromCheckpoint(self, model_checkpoint_filepath, model_filepath, newEpochs):
         class_names = ['single AGN', 'double AGN']
-        image_shape = (60, 60, 1)
+        image_shape = (94, 94, 1)
 
         
         #Another method of numerical labeling that ensures that 'double AGN' is the positive class

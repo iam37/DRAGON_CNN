@@ -117,44 +117,53 @@ class ModelCreator:
         return model
     def create_expanded_model(self, dropout, display_architecture = True):
         model = models.Sequential()
-        model.add(layers.Input(shape=(60, 60, 1)))
+        model.add(layers.Input(shape=self.image_shape))
         model.add(layers.Rescaling(1./255))
     
-        model.add(layers.Conv2D(96, (12, 12), padding='same', strides=(2, 2), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Conv2D(64, (3, 3), padding='same', strides=(2, 2), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(dropout))
         model.add(layers.BatchNormalization())
+        model.add(layers.AveragePooling2D((2, 2), strides=(2, 2)))
     
-        model.add(layers.Conv2D(256, (6, 6), padding='same', strides=(1, 1), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Conv2D(96, (3, 3), padding='same', strides=(2, 2), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(dropout))
         model.add(layers.BatchNormalization())
+        model.add(layers.AveragePooling2D((2, 2), strides=(2, 2)))
     
-        model.add(layers.Conv2D(256, (3,3), padding='same', strides=(1, 1), activation=tf.nn.leaky_relu,  kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Conv2D(128, (3,3), padding='same', strides=(2, 2), activation=tf.nn.leaky_relu,  kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(dropout))
         model.add(layers.BatchNormalization())
-    
-        model.add(layers.MaxPooling2D((2, 2), strides=(2, 2)))
-        for _ in range(1):
-            model.add(layers.Conv2D(384, kernel_size= 3, strides=(1, 1), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
-            model.add(layers.Dropout(dropout))
-        model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+        model.add(layers.Conv2D(256, (3,3), padding='same', strides = (2,2), activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Dropout(dropout))
+        model.add(layers.BatchNormalization())
+
+
+        model.add(layers.Conv2D(384, (3,3), padding = 'same', strides = (1,1), activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Dropout(dropout))
+        model.add(layers.BatchNormalization())
+
+        model.add(layers.Conv2D(384, (3,3), padding = 'same', strides = (1,1), activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Dropout(dropout))
+        model.add(layers.BatchNormalization())
+
+        model.add(layers.Conv2D(512, (3,3), padding = 'same', strides = (1,1), activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Dropout(dropout))
+        model.add(layers.BatchNormalization())
+        model.add(layers.AveragePooling2D((2, 2), strides=(2, 2)))
+
         model.add(layers.Flatten())
-        model.add(layers.Dense(512, activation=tf.nn.leaky_relu,  kernel_regularizer = tf.keras.regularizers.l2(0.01)))
-        model.add(layers.Dropout(dropout))
-        #model.add(layers.Dropout())
-        model.add(layers.BatchNormalization())
-        model.add(layers.Dense(512, activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
-        model.add(layers.Dense(4, activation='softmax'))
+        model.add(layers.Dense(1024, activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Dropout(0.5))
+        model.add(layers.Dense(self.num_classes, activation = 'softmax'))
+        
         lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=self.learning_rate,
                                                                       decay_steps=10000,decay_rate=0.9)
     
         optimized = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     
         model.compile(optimizer=optimized, loss=tf.keras.losses.CategoricalCrossentropy(),
-                      metrics=[tf.keras.metrics.BinaryAccuracy(name='binary_accuracy'),
-                               tf.keras.metrics.FalsePositives(name='false positives'),
-                               tf.keras.metrics.FalseNegatives(name='false negatives'),
-                               tf.keras.metrics.TruePositives(name='true positives'),
-                               tf.keras.metrics.TrueNegatives(name='true negatives'),
+                      metrics=[tf.keras.metrics.Accuracy(name='accuracy'),
                                tf.keras.metrics.Recall(name='recall'),
                                tf.keras.metrics.Precision(name='precision'),
                                tf.keras.metrics.F1Score(name = 'f1_score')], run_eagerly=False)
