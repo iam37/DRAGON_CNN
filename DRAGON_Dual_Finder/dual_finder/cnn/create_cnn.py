@@ -102,11 +102,7 @@ class ModelCreator:
         optimized = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     
         model.compile(optimizer=optimized, loss=tf.keras.losses.CategoricalCrossentropy(),
-                      metrics=[tf.keras.metrics.BinaryAccuracy(name='binary_accuracy'),
-                               tf.keras.metrics.FalsePositives(name='false positives'),
-                               tf.keras.metrics.FalseNegatives(name='false negatives'),
-                               tf.keras.metrics.TruePositives(name='true positives'),
-                               tf.keras.metrics.TrueNegatives(name='true negatives'),
+                      metrics=[tf.keras.metrics.CategoricalAccuracy(name='accuracy'),
                                tf.keras.metrics.Recall(name='recall'),
                                tf.keras.metrics.Precision(name='precision'),
                                tf.keras.metrics.F1Score(name = 'f1_score')], run_eagerly=False)
@@ -163,7 +159,7 @@ class ModelCreator:
         optimized = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     
         model.compile(optimizer=optimized, loss=tf.keras.losses.CategoricalCrossentropy(),
-                      metrics=[tf.keras.metrics.Accuracy(name='accuracy'),
+                      metrics=[tf.keras.metrics.CategoricalAccuracy(name='accuracy'),
                                tf.keras.metrics.Recall(name='recall'),
                                tf.keras.metrics.Precision(name='precision'),
                                tf.keras.metrics.F1Score(name = 'f1_score')], run_eagerly=False)
