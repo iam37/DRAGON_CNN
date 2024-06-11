@@ -6,6 +6,7 @@ from ignite.engine import (
     create_supervised_evaluator,
 )
 from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix, Recall, Fbeta
+import logging
 
 def create_trainer(model, optimizer, criterion, loaders, device):
     """Set up Ignite trainer and evaluator."""
@@ -47,6 +48,7 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     # Define training hooks
     @trainer.on(Events.STARTED)
     def log_results_start(trainer):
+        logging.info("Log results started.")
         for L, loader in loaders.items():
             log_metrics(trainer, loader, log_prefix=f"{L}_")
 

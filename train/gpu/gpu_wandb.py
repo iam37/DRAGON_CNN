@@ -11,6 +11,7 @@ import subprocess
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 import torch.optim as opt
 
 import kornia.augmentation as K
@@ -21,8 +22,9 @@ from cnn import model_factory, model_stats, save_trained_model
 from train import create_trainer
 from utils import discover_devices, specify_dropout_rate
 
-# Global Sweep Configuration. This also effects early stopping
-# for bad runs!
+from torch.utils.data.distributed import DistributedSampler
+
+# Global Sweep Configuration. This also affects early stopping for bad runs!
 sweep_config = {
     "method": "bayes",
     "metric": {"goal": "maximize", "name": "accuracy"},
@@ -43,10 +45,92 @@ sweep_config = {
 }
 
 
-def initialize_and_run_agent(device, p_args):
-    if device is not None:
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+
+def cleanup():
+    dist.destroy_process_group()
+
+
+def initialize_and_run_agent(rank, world_size, args):
+    setup(rank, world_size)
+
+    # Modify args for DDP
+    args["rank"] = rank
+    args["world_size"] = world_size
+
+    # Create the model given model_type
+    cls = model_factory(args["model_type"])
+    model_args = {
+        "cutout_size": args["cutout_size"],
+        "channels": args["channels"],
+        "num_classes": args["n_classes"]
+    }
+
+    if "drp" in args["model_type"].split("_"):
+        logging.info(
+            "Using dropout rate of {} in the model".format(
+                args["dropout_rate"]
+            )
+        )
+        model_args["dropout"] = "True"
+
+    model = cls(**model_args)
+
+    # Change the default dropout rate if specified
+    if args["dropout_rate"] is not None:
+        specify_dropout_rate(model, args["dropout_rate"])
+
+    torch.cuda.set_device(rank)
+    model = model.to(rank)
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
+
+    # Select the desired transforms
+    T = None
+    if args["crop"]:
+        T = K.CenterCrop(args["cutout_size"])
+
+    # Generate the DataLoaders and log the train/devel/test split sizes
+    splits = ("train", "devel", "test")
+    datasets = {
+        k: FITSDataset(
+            data_dir=args["data_dir"],
+            slug=args["split_slug"],
+            cutout_size=args["cutout_size"],
+            channels=args["channels"],
+            normalize=args["normalize"],
+            transforms=T,
+            split=k,
+            force_reload=args["force_reload"],
+            n_workers=args["n_workers"]
+        )
+        for k in splits
+    }
+
+    # Define the criterion
+    loss_dict = {
+        "nll": nn.NLLLoss(),
+    }
+    criterion = loss_dict[args["loss"]]
+
+    # Initializing the Sweep
+    wandb.login()
+    wandb.require("service")
+
+    trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args, rank=rank)
+    p_args = {
+        "sweep_id": args["sweep_id"],
+        "function": trainer_func,
+        "project": args["experiment_name"],
+        "entity": args["entity"],
+        "count": (args["n_sweeps"] / args["n_workers"])
+    }
+
     wandb.agent(**p_args)
+    cleanup()
 
 
 @click.command()
@@ -71,8 +155,7 @@ So this variable should be specified accordingly""",
     "--model_type",
     type=click.Choice(
         [
-            "dragon",
-            "resnet"
+            "dragon"
         ],
         case_sensitive=False,
     ),
@@ -111,6 +194,7 @@ to use multiple GPUs when they are available""",
 loaded images will be normalized using the arsinh function""",
 )
 @click.option("--n_classes", type=int, default=6)
+@click.option("--force_reload/--no_force_reload", type=bool, default=False)
 @click.option(
     "--loss",
     type=click.Choice(
@@ -137,6 +221,8 @@ to the cutout_size parameter""",
     model. If this is set to None, then the default dropout rate
     in the specific model is used.""",
 )
+@click.option("--rank", type=int, default=0, help="Rank of the current process for DDP.")
+@click.option("--world_size", type=int, default=1, help="Total number of processes for DDP.")
 def sweep_init(**kwargs):
     # Copy and log args
     args = {k: v for k, v in kwargs.items()}
@@ -144,117 +230,28 @@ def sweep_init(**kwargs):
     # Discover devices
     args["device"] = discover_devices()
 
-    # Create the model given model_type
-    cls = model_factory(args["model_type"])
-    model_args = {
-        "cutout_size": args["cutout_size"],
-        "channels": args["channels"],
-        "num_classes": args["n_classes"]
-    }
-
-    if "drp" in args["model_type"].split("_"):
-        logging.info(
-            "Using dropout rate of {} in the model".format(
-                args["dropout_rate"]
-            )
-        )
-        model_args["dropout"] = "True"
-
-    model = cls(**model_args)
-    model = nn.DataParallel(model) if args["parallel"] else model
-    model = model.to(args["device"])
-
-    # Chnaging the default dropout rate if specified
-    if args["dropout_rate"] is not None:
-        specify_dropout_rate(model, args["dropout_rate"])
-
-    # Select the desired transforms
-    T = None
-    if args["crop"]:
-        T = K.CenterCrop(args["cutout_size"])
-
-    # Generate the DataLoaders and log the train/devel/test split sizes
-    splits = ("train", "devel", "test")
-    datasets = {
-        k: FITSDataset(
-            data_dir=args["data_dir"],
-            slug=args["split_slug"],
-            cutout_size=args["cutout_size"],
-            channels=args["channels"],
-            normalize=args["normalize"],
-            transforms=T,
-            split=k,
-        )
-        for k in splits
-    }
-
-    # Select the desired transforms
-    T = None
-    if args["crop"]:
-        T = K.CenterCrop(args["cutout_size"])
-
-    # Define the criterion
-    loss_dict = {
-        "nll": nn.NLLLoss(),
-    }
-    criterion = loss_dict[args["loss"]]
-
-    # Log into W&B
-    wandb.login()
-    wandb.require("service")
-
-    # Initializing the Sweep
-    trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args)
-    sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
+    args["sweep_id"] = sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
     logging.info(f"The W&B sweep ID for this run is {sweep_id}.")
 
-    # Multiplexing capability.
-    p_args = {
-        "sweep_id": sweep_id,
-        "function": trainer_func,
-        "project": args["experiment_name"],
-        "entity": args["entity"],
-        "count": (args["n_sweeps"] / args["n_workers"])
-    }
-    processes = []
-    if args["device"] == "cpu" and args["parallel"]:  # Multiplex given N cpus
-        num_agents = min(mp.cpu_count(), args["n_workers"])
-        logging.info(f"Parallelizing sweeps over {num_agents} CPUs.")
-        for _ in range(num_agents):
-            p = mp.Process(target=wandb.agent, kwargs=p_args)
-            p.start()  # Start the new child process
-            processes.append(p)
-
-        for p in processes:
-            p.join()  # Thread join to wait for each to finish execution.
-
-    elif args["device"] == "cuda" and args["parallel"]:  # Multiplexing using GPUs.
-        num_agents = torch.cuda.device_count()
-        logging.info(f"Parallelizing sweeps over {num_agents} agents.")
-
-        for i in range(num_agents):
-            p = mp.Process(target=initialize_and_run_agent, args=(i, p_args))
-            p.start()  # Start the new child process
-            processes.append(p)
-
-        for p in processes:
-            p.join()  # Thread join to wait for each to finish execution.
+    if args["parallel"]:
+        world_size = torch.cuda.device_count()
+        logging.info(f'Parallelizing sweeps over {world_size} devices.')
+        mp.spawn(initialize_and_run_agent, args=(world_size, args), nprocs=world_size, join=True)
+    else:
+        initialize_and_run_agent(0, 1, args)
 
     # Housekeeping
     sweep_path = f'{args["entity"]}/{args["experiment_name"]}/{sweep_id}'
     sweep_list = ['wandb', 'sweep', '--cancel', sweep_path]
     try:
-        result = subprocess.run(subprocess.list2cmdline(sweep_list), check=True, capture_output=True, text=True)
+        result = subprocess.run(" ".join(sweep_list), shell=True)
         logging.info(f"All runs on sweep ID {sweep_id} have terminated and sweep is now canceled.")
         logging.info(result.stdout)
     except subprocess.CalledProcessError as e:
         logging.error(f"ERROR: Failed to cancel sweep {sweep_id}: {e}")
 
-    return
 
-
-
-def train(model, datasets, criterion, args):
+def train(model, datasets, criterion, args, rank):
     # Initializing W&B run
     with wandb.init(
         id=args["run_id"],
@@ -287,8 +284,7 @@ def train(model, datasets, criterion, args):
             batch_size=wandb.config.batch_size,
             n_workers=args["n_workers"],
         )
-
-        loaders = {k: loader_factory(v) for k, v in datasets.items()}
+        loaders = {k: loader_factory(dataset=v, sampler=v.get_sampler()) for k, v in datasets.items()}
         args["splits"] = {k: len(v.dataset) for k, v in loaders.items()}
 
         # Write the parameters and model stats to W&B
@@ -299,6 +295,8 @@ def train(model, datasets, criterion, args):
         trainer = create_trainer(
             model, optimizer, criterion, loaders, args["device"]
         )
+
+        logging.info("Trainer created.")
 
         # Run trainer and save model state
         trainer.run(loaders["train"], max_epochs=wandb.config.epochs)
