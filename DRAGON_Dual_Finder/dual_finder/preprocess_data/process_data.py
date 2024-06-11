@@ -35,7 +35,7 @@ def augment_dataset(images, num_augmented_images=20):
 
     return augmented_images
 
-def create_dataset(empty_sky_filepath, single_image_filepath, dual_image_filepath, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
+def create_dataset(empty_sky_filepath, single_image_filepath, dual_image_filepath, offset_image_filepath, stellar_filepath, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
     empty_sky_images = []
     empty_sky_labels = []
     logging.info("Loading empty sky images...")
@@ -78,7 +78,7 @@ def create_dataset(empty_sky_filepath, single_image_filepath, dual_image_filepat
     logging.info("Loading dual AGN images...")
     dual_images = []
     dual_labels = []
-    for dual_image in glob.glob(dual_image_filepath+"*.fits"):
+    for dual_image in tqdm(glob.glob(dual_image_filepath+"*.fits")):
         try:
             with fits.open(dual_image) as hdul:
                 img = hdul[0].data
@@ -91,15 +91,51 @@ def create_dataset(empty_sky_filepath, single_image_filepath, dual_image_filepat
     #dual_images = augment_dataset(dual_images, num_augmented_images = 5)
     #dual_images = dual_images[:, :, :, -1]
     dual_images = np.expand_dims(dual_images, axis = -1)
-    dual_images = np.asarray(dual_images)
     dual_labels = np.asarray(dual_labels)
-    if len(single_images) != len(single_labels):
-        print(f"ERROR: single images has length {len(single_images)} while single labels has length {len(single_labels)}")
+    if len(dual_images) != len(dual_labels):
+        print(f"ERROR: dual images has length {len(dual_images)} while dual labels has length {len(dual_labels)}")
 
     # Now make splits of the dataset into training, testing, and validation metrics. The defaults for this function are train = 0.65, val = 0.2, test = 0.15
+    offset_images = []
+    offset_labels = []
+    logging.info("Loading offset AGN images")
+    for offset_image in tqdm(glob.glob(offset_image_filepath+"*.fits")):
+        try:
+            with fits.open(offset_image) as hdul:
+                img = hdul[0].data
+                img = crop_center(img, 94, 94)
+                offset_images.append(img)
+                offset_labels.append("offset_AGN")
+        except OSError:
+            print(f"{offset_image} is corrupted or otherwise cannot be opened.")
+            continue
+    offset_images = np.expand_dims(offset_images, axis = -1)
+    offset_labels = np.asarray(offset_labels)
+    if len(offset_images) != len(offset_labels):
+        print(f"ERROR: offset images has length {len(offset_images)} while offset labels has length {len(offset_labels)}")
 
-    total_images = np.concatenate((empty_sky_images, single_images, dual_images), axis = 0)
-    total_labels = np.concatenate((empty_sky_labels, single_labels, dual_labels), axis = 0)
+    logging.info("Loading stellar images")
+    stellar_images = []
+    stellar_labels = []
+    for stellar_image in tqdm(glob.glob(stellar_filepath+"*.fits")):
+        try:
+            with fits.open(stellar_image) as hdul:
+                img = hdul[0].data
+                img = crop_center(img, 94, 94)
+                stellar_images.append(img)
+        except OSError:
+            print(f"{stellar_image} is corrupted or otherwise cannot be opened.")
+            continue
+    stellar_images = np.asarray(stellar_images)
+    stellar_images = augment_dataset(stellar_images, num_augmented_images = 10)
+    for _ in range(len(stellar_images)):
+        stellar_labels.append("star")
+    stellar_labels = np.asarray(stellar_labels)
+    if len(stellar_images) != len(stellar_labels):
+        print(f"ERROR: stellar images has length {len(stellar_images)} while stellar labels has length {len(stellar_labels)}")
+    
+    total_images = np.concatenate((empty_sky_images, single_images, dual_images, offset_images, stellar_images), axis = 0)
+    total_labels = np.concatenate((empty_sky_labels, single_labels, dual_labels, offset_labels, stellar_labels), axis = 0)
     print(f"Total images: {np.shape(total_images)}")
     print(f"Total labels: {np.shape(total_labels)}")
 

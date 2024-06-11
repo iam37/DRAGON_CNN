@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 import keras
 import platform
@@ -26,6 +27,7 @@ from create_cnn import ModelCreator
 from load_model import loadModelClass
 from extract_feature_maps import FeatureExtractor
 import warnings
+import random
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -95,7 +97,7 @@ class DualFinder:
         feature_instance = FeatureMapCallback(feature_map_saver, batch_freq = 100)
         return feature_instance
     def encode_labels(self, initial_labels, validation_labels):
-        label_mapping = {'empty_sky': 0, 'single_AGN': 1, 'dual_AGN': 2}
+        label_mapping = {'empty_sky': 0, 'star':1, 'single_AGN': 2, 'offset_AGN': 3,'dual_AGN': 4}
         print(initial_labels)
         print(validation_labels)
         if isinstance(initial_labels, np.ndarray):
@@ -118,7 +120,7 @@ class DualFinder:
     def trainCNN(self, dropout_rate = 0.32523228915885216, save_feature_maps = True, model_filepath = "../saved_dual_finder_models/"):
         os.environ["CUDA_VISIBLE_DEVICES"]="0"
         #class_names = ['single AGN', 'double AGN']
-        class_names = ["empty_sky", "single_AGN", "dual_AGN"]
+        self.class_names = ["empty_sky", "star", "single_AGN", "offset_AGN", "dual_AGN"]
         #image_shape = (94, 94, 1)
 
         #Another method of numerical labeling that ensures that 'double AGN' is the positive class
@@ -195,7 +197,37 @@ class DualFinder:
                 return history, model
 
     def predict(self, model, dataset):
-        return model.predict(dataset)
+        # Predict the classes and confidence scores
+        predictions = model.predict(dataset)
+        predicted_classes = np.argmax(predictions, axis=1)
+        confidence_scores = np.max(predictions, axis=1)
+    
+        # Get the images from the dataset
+        if isinstance(dataset, tf.data.Dataset):
+            images = list(dataset.as_numpy_iterator())
+            images = np.array([img[0] for img in images])  # assuming the dataset yields (image, label) tuples
+        else:
+            images = dataset
+        num_images = min(len(images), 25)
+        
+        random_indices = random.sample(range(len(images)), num_images)
+        selected_images = images[random_indices]
+        selected_predictions = predicted_classes[random_indices]
+        selected_confidences = confidence_scores[random_indices]
+    
+        # Plot the images with their predicted classes and confidence scores
+        plt.figure(figsize=(10, 10))
+        for i in range(num_images):
+            plt.subplot(5, 5, i + 1)
+            plt.xticks([])
+            plt.yticks([])
+            plt.grid(False)
+            plt.imshow(selected_images[i], cmap="gray", vmin = np.percentile(selected_images[i], 1), vmax = np.percentile(selected_images[i], 99))
+            predicted_label = self.class_names[selected_predictions[i]]
+            confidence = selected_confidences[i]
+            plt.title(f"{predicted_label}\n{confidence:.2f}")
+        plt.tight_layout()
+        plt.show()
         
     def transferLearning(self, num_layers_to_freeze, model_filepath, newEpochs, new_train_data, new_train_labels, new_val_data, new_val_labels, newBatch, newLearningRate, dropout_rate, train_synth = True, model = None, save_feature_maps = True, newClassWeightsDict = None):
         print(model_filepath)
