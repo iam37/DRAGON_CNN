@@ -6,6 +6,8 @@ from ignite.engine import (
     create_supervised_evaluator,
 )
 from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix, Recall, Fbeta
+from ignite.handlers import TerminateOnNan
+import torch.nn as nn
 import logging
 
 def create_trainer(model, optimizer, criterion, loaders, device):
@@ -29,9 +31,10 @@ def create_trainer(model, optimizer, criterion, loaders, device):
 
     # Function to log metrics to wandb
     def log_metrics(trainer, loader, log_prefix=""):
+        logging.info(f"Logging metrics for {log_prefix}")
         evaluator.run(loader)
         metrics = evaluator.state.metrics
-        log_dict = {k: v for k, v in metrics.items() if k != "cm"}
+        log_dict = {f"{log_prefix}{k}": v for k, v in metrics.items() if k != "cm"}
 
         # Handle the confusion matrix separately
         cm = metrics["cm"].cpu().numpy()
@@ -54,7 +57,15 @@ def create_trainer(model, optimizer, criterion, loaders, device):
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_devel_results(trainer):
-        log_metrics(trainer, loaders["devel"], log_prefix="devel_")
+        for L, loader in loaders.items():
+            log_metrics(trainer, loaders["devel"], log_prefix=f"{L}_")
+            TerminateOnNan()
+
+    @trainer.on(Events.ITERATION_COMPLETED)
+    def clip_gradients(engine):
+        for param in model.parameters():
+            if param.grad is not None:
+                param.grad.data.clamp_(-1, 1)
 
     @trainer.on(Events.COMPLETED)
     def log_results_end(trainer):

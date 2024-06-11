@@ -30,7 +30,7 @@ sweep_config = {
         "learning_rate": {"values": [0.001, 0.0001, 0.0005]},
         "momentum": {"values": [1e-4, 1e-5, 1e-6]},
         "nesterov": {"values": [True, False]},
-        "weight_decay": {"values": [1e-6, 1e-8, 1e-10]},
+        "weight_decay": {"values": [1e-1, 1e-2, 1e-3]},
         "epochs": {"values": [10, 15, 20]},
         "batch_size": {"values": [16, 32, 64]},
         "dropout_rate": {"values": [0, 0.5]}
@@ -38,7 +38,8 @@ sweep_config = {
     "early_terminate": {
         "type": "hyperband",
         "eta": 2,
-        "min_iter": 3
+        "min_iter": 3,
+        "strict": True  # Corrected
     }
 }
 
@@ -196,8 +197,9 @@ def sweep_init(**kwargs):
     # Define the criterion
     loss_dict = {
         "nll": nn.NLLLoss(),
+        "ce": nn.CrossEntropyLoss()
     }
-    criterion = loss_dict[args["loss"]]
+    criterion = loss_dict["ce"]
 
     # Log into W&B
     wandb.login()
@@ -244,7 +246,7 @@ def sweep_init(**kwargs):
     sweep_path = f'{args["entity"]}/{args["experiment_name"]}/{sweep_id}'
     sweep_list = ['wandb', 'sweep', '--cancel', sweep_path]
     try:
-        result = subprocess.run(subprocess.list2cmdline(sweep_list), check=True, capture_output=True, text=True)
+        result = subprocess.run(" ".join(sweep_list), shell=True)
         logging.info(f"All runs on sweep ID {sweep_id} have terminated and sweep is now canceled.")
         logging.info(result.stdout)
     except subprocess.CalledProcessError as e:
