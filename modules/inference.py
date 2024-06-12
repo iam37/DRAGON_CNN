@@ -241,7 +241,7 @@ def main(
         T = K.CenterCrop(cutout_size)
 
     # Test
-    
+
     # Load the data_preprocessing and create a data_preprocessing loader
     logging.info("Loading images to device...")
     dataset = FITSDataset(
