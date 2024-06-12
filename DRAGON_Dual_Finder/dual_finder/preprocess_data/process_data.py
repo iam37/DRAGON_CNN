@@ -34,112 +34,80 @@ def augment_dataset(images, num_augmented_images=20):
     augmented_images = np.array(augmented_images)
 
     return augmented_images
-
-def create_dataset(empty_sky_filepath, single_image_filepath, dual_image_filepath, offset_image_filepath, stellar_filepath, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
-    empty_sky_images = []
-    empty_sky_labels = []
-    logging.info("Loading empty sky images...")
-    for empty_sky_files in tqdm(glob.glob(empty_sky_filepath+"*.fits")):
-        with fits.open(empty_sky_files, memmap = False) as hdul:
-            img = hdul[1].data
-            img = crop_center(img, 94, 94)
-            empty_sky_images.append(img)
-            #empty_sky_labels.append("empty_sky")
-    #print(np.shape(empty_sky_images))
-    empty_sky_images = np.asarray(empty_sky_images)
-    empty_sky_images = augment_dataset(empty_sky_images, num_augmented_images = 3)
-    for _ in empty_sky_images:
-        empty_sky_labels.append("empty_sky")
-    #empty_sky_images = empty_sky_images[:, :, :, -1]
-    empty_sky_labels = np.asarray(empty_sky_labels)
-    print(f"Shape of empty_sky_images: {empty_sky_images.shape}")
-    if len(empty_sky_images) != len(empty_sky_labels):
-        print(f"ERROR: empty sky images has length {len(empty_sky_images)} while empty sky labels has length {len(empty_sky_labels)}")
-
-    logging.info("Loading single AGN images...")
-    single_images = []
-    single_labels = []
-    for single_image in tqdm(glob.glob(single_image_filepath+"*.fits")):
-        with fits.open(single_image) as hdul:
-            img = hdul[1].data
-            img = crop_center(img, 94, 94)
-            single_images.append(img)
-            #single_labels.append("single_AGN")
-    single_images = np.asarray(single_images)
-    single_images = augment_dataset(single_images, num_augmented_images = 10)
-    for _ in single_images:
-        single_labels.append("single_AGN")
-    #single_images = single_images[:, :, :, -1]
-    single_labels = np.asarray(single_labels)
-    if len(single_images) != len(single_labels):
-        print(f"ERROR: single images has length {len(single_images)} while single labels has length {len(single_labels)}")
-
-
-    logging.info("Loading dual AGN images...")
-    dual_images = []
-    dual_labels = []
-    for dual_image in tqdm(glob.glob(dual_image_filepath+"*.fits")):
-        try:
-            with fits.open(dual_image) as hdul:
-                img = hdul[0].data
-                img = crop_center(img, 94, 94)
-                dual_images.append(img)
-                dual_labels.append("dual_AGN")
-        except OSError:
-            print(f"{dual_image} is corrupted or empty, moving on...")
-            continue
-    #dual_images = augment_dataset(dual_images, num_augmented_images = 5)
-    #dual_images = dual_images[:, :, :, -1]
-    dual_images = np.expand_dims(dual_images, axis = -1)
-    dual_labels = np.asarray(dual_labels)
-    if len(dual_images) != len(dual_labels):
-        print(f"ERROR: dual images has length {len(dual_images)} while dual labels has length {len(dual_labels)}")
-
-    # Now make splits of the dataset into training, testing, and validation metrics. The defaults for this function are train = 0.65, val = 0.2, test = 0.15
-    offset_images = []
-    offset_labels = []
-    logging.info("Loading offset AGN images")
-    for offset_image in tqdm(glob.glob(offset_image_filepath+"*.fits")):
-        try:
-            with fits.open(offset_image) as hdul:
-                img = hdul[0].data
-                img = crop_center(img, 94, 94)
-                offset_images.append(img)
-                offset_labels.append("offset_AGN")
-        except OSError:
-            print(f"{offset_image} is corrupted or otherwise cannot be opened.")
-            continue
-    offset_images = np.expand_dims(offset_images, axis = -1)
-    offset_labels = np.asarray(offset_labels)
-    if len(offset_images) != len(offset_labels):
-        print(f"ERROR: offset images has length {len(offset_images)} while offset labels has length {len(offset_labels)}")
-
-    logging.info("Loading stellar images")
-    stellar_images = []
-    stellar_labels = []
-    for stellar_image in tqdm(glob.glob(stellar_filepath+"*.fits")):
-        try:
-            with fits.open(stellar_image) as hdul:
-                img = hdul[0].data
-                img = crop_center(img, 94, 94)
-                stellar_images.append(img)
-        except OSError:
-            print(f"{stellar_image} is corrupted or otherwise cannot be opened.")
-            continue
-    stellar_images = np.asarray(stellar_images)
-    stellar_images = augment_dataset(stellar_images, num_augmented_images = 10)
-    for _ in range(len(stellar_images)):
-        stellar_labels.append("star")
-    stellar_labels = np.asarray(stellar_labels)
-    if len(stellar_images) != len(stellar_labels):
-        print(f"ERROR: stellar images has length {len(stellar_images)} while stellar labels has length {len(stellar_labels)}")
     
-    total_images = np.concatenate((empty_sky_images, single_images, dual_images, offset_images, stellar_images), axis = 0)
-    total_labels = np.concatenate((empty_sky_labels, single_labels, dual_labels, offset_labels, stellar_labels), axis = 0)
+def load_images(filepath, label, crop_center_fn, augment_fn, num_augmented_images):
+    images = []
+    labels = []
+    logging.info(f"Loading images from {filepath} with label {label}...")
+    for image_file in tqdm(glob.glob(filepath + "*.fits")):
+        try:
+            with fits.open(image_file, memmap=False) as hdul:
+                if 'star' in label:
+                    img = hdul[0].data
+                elif 'dual' in label:
+                    img = hdul[0].data
+                elif 'offset' in label:
+                    img = hdul[0].data
+                else:
+                    img = hdul[1].data
+                img = crop_center_fn(img, 94, 94)
+                images.append(img)
+                if not augment_fn:
+                    labels.append(label)
+        except OSError:
+            print(f"{image_file} is corrupted or empty, moving on...")
+            continue
+    images = np.asarray(images)
+    if augment_fn and num_augmented_images:
+        images = augment_fn(images, num_augmented_images=num_augmented_images)
+    labels = [label] * len(images)  # Ensure labels are appended correctly for augmented images
+    labels = np.asarray(labels)
+    print(f"Loaded {len(images)} images with {len(labels)} labels from {filepath}")
+    return images, labels
+def create_dataset(empty_sky_filepath = None, single_image_filepath = None, dual_image_filepath = None, offset_image_filepath = None, stellar_filepath = None, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
+    all_images = []
+    all_labels = []
+
+    if empty_sky_filepath:
+        empty_sky_images, empty_sky_labels = load_images(empty_sky_filepath, "empty_sky", crop_center, augment_dataset, 3)
+        all_images.append(empty_sky_images)
+        all_labels.append(empty_sky_labels)
+        
+    if single_image_filepath:
+        single_images, single_labels = load_images(single_image_filepath, "single_AGN", crop_center, augment_dataset, 5)
+        print(f"Length of single AGN images: {len(single_images)}")
+        all_images.append(single_images)
+        all_labels.append(single_labels)
+        
+    if dual_image_filepath:
+        dual_images, dual_labels = load_images(dual_image_filepath, "dual_AGN", crop_center, None, None)
+        logging.info("expanding dims")
+        dual_images = np.expand_dims(dual_images, axis = -1)
+        all_images.append(dual_images)
+        all_labels.append(dual_labels)
+        
+    if offset_image_filepath:
+        offset_images, offset_labels = load_images(offset_image_filepath, "offset_AGN", crop_center, None, None)
+        logging.info("expanding dims")
+        offset_images = np.expand_dims(offset_images, axis = -1)
+        all_images.append(offset_images)
+        all_labels.append(offset_labels)
+        
+    if stellar_filepath:
+        stellar_images, stellar_labels = load_images(stellar_filepath, "star_AGN_align", crop_center, None, None)
+        print(f"Length of stellar images: {stellar_images.shape}")
+        logging.info("expanding dims")
+        stellar_images = np.expand_dims(stellar_images, axis = -1)
+        all_images.append(stellar_images)
+        all_labels.append(stellar_labels)
+    
+    total_images = np.concatenate(all_images, axis = 0)
+    #print(np.shape(all_labels))
+    total_labels = np.concatenate(all_labels, axis = 0)
     print(f"Total images: {np.shape(total_images)}")
     print(f"Total labels: {np.shape(total_labels)}")
 
-    np.random.seed(42)
+    #np.random.seed(42)
     indices = np.arange(total_images.shape[0])
     np.random.shuffle(indices)
 
@@ -158,6 +126,13 @@ def create_dataset(empty_sky_filepath, single_image_filepath, dual_image_filepat
 
     test_images = shuffled_images[train_size + val_size:]
     test_labels = shuffled_labels[train_size + val_size:]
+
+    print(f"Train_dataset: {train_images.shape}")
+    print(f"Train_labels: {train_labels.shape}")
+    print(f"Val_dataset: {val_images.shape}")
+    print(f"Val_labels: {val_labels.shape}")
+    print(f"Test_dataset: {test_images.shape}")
+    print(f"Test_labels: {test_labels.shape}")
 
     return (train_images, train_labels), (val_images, val_labels), (test_images, test_labels)
 
