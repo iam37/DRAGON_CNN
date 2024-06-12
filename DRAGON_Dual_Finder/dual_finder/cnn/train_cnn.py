@@ -33,7 +33,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class DualFinder:
-    def __init__(self, train_dataset, validation_dataset, image_shape, initial_labels, validation_labels, epoch, batchSize, learningRate, num_classes, model_type, display_architecture = True, evaluation_set = None, evaluation_labels = None):
+    def __init__(self, train_dataset, validation_dataset, image_shape, initial_labels, validation_labels, epoch, batchSize, learningRate, num_classes, model_type, importance_score, display_architecture = True, evaluation_set = None, evaluation_labels = None):
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
         self.initial_labels = initial_labels
@@ -48,6 +48,7 @@ class DualFinder:
         self.num_classes = num_classes
         self.model_type = model_type
         self.display_architecture = display_architecture
+        self.importance_score = importance_score
 
     def make_one_hot_labels(self, y_train, y_val):
         label_encoder = LabelEncoder()
@@ -97,7 +98,8 @@ class DualFinder:
         feature_instance = FeatureMapCallback(feature_map_saver, batch_freq = 100)
         return feature_instance
     def encode_labels(self, initial_labels, validation_labels):
-        label_mapping = {'empty_sky': 0, 'star':1, 'single_AGN': 2, 'offset_AGN': 3,'dual_AGN': 4}
+        #label_mapping = {'empty_sky': 0, 'star':1, 'single_AGN': 2, 'offset_AGN': 3,'dual_AGN': 4}
+        label_mapping = {'empty_sky': 0, 'star_AGN_align': 1, 'single_AGN': 2, 'offset_AGN': 3, 'dual_AGN': 4}
         print(initial_labels)
         print(validation_labels)
         if isinstance(initial_labels, np.ndarray):
@@ -116,85 +118,78 @@ class DualFinder:
         val_labels_one_hot = to_categorical(val_labels_numeric)
         val_labels_one_hot = val_labels_one_hot.astype('float32')
         return train_labels_one_hot, val_labels_one_hot
+    # label_mapping = {'empty_sky': 0, 'star': 1, 'single_AGN': 2, 'offset_AGN': 3, 'dual_AGN': 4}
+    """def encode_labels(self, initial_labels, validation_labels):
+        label_mapping = {'star': 0, 'single_AGN': 1}
+        print(initial_labels)
+        print(validation_labels)
+        if isinstance(initial_labels, np.ndarray):
+            print("Converting to list")
+            initial_labels = initial_labels.flatten().tolist()
+        if isinstance(validation_labels, np.ndarray):
+            print("Converting to list")
+            validation_labels = validation_labels.flatten().tolist()
+            
+        train_labels_numeric = [label_mapping[label] for label in initial_labels]
+        train_labels_numeric = np.asarray(train_labels_numeric)
+        
+        val_labels_numeric = [label_mapping[label] for label in validation_labels]
+        val_labels_numeric = np.asarray(val_labels_numeric)
+        
+        return train_labels_numeric, val_labels_numeric"""
+
         
     def trainCNN(self, dropout_rate = 0.32523228915885216, save_feature_maps = True, model_filepath = "../saved_dual_finder_models/"):
-        os.environ["CUDA_VISIBLE_DEVICES"]="0"
-        #class_names = ['single AGN', 'double AGN']
-        self.class_names = ["empty_sky", "star", "single_AGN", "offset_AGN", "dual_AGN"]
-        #image_shape = (94, 94, 1)
-
-        #Another method of numerical labeling that ensures that 'double AGN' is the positive class
-        train_labels_one_hot, val_labels_one_hot = self.encode_labels(self.initial_labels, self.validation_labels)
-
-
-        class_indices = np.argmax(train_labels_one_hot, axis = 1) #for creating a dictionary of class weights meant to prevent overfitting the dataset
-        class_weights = compute_class_weight('balanced', classes = np.unique(class_indices), y = class_indices)
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        self.class_names = ["empty_sky", "star_AGN_align", "single_AGN", "offset_AGN", "dual_AGN"]
+        train_labels, val_labels = self.encode_labels(self.initial_labels, self.validation_labels)
+        class_indices = np.argmax(train_labels, axis = 1)
+        #class_weights = compute_class_weight('balanced', classes=np.unique(train_labels), y=train_labels)
+        class_weights = compute_class_weight('balanced', classes=np.unique(class_indices), y=class_indices)
         class_weightsDict = dict(enumerate(class_weights))
-        #num_classes = 2
-        if self.model_type.lower() == 'dualfinder':
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=FutureWarning)
-                warnings.filterwarnings("ignore", category=UserWarning)
-                warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-                model_creator = ModelCreator(self.image_shape, self.learningRate, self.num_classes, display_architecture = self.display_architecture)
-                model = model_creator.create_expanded_model(dropout_rate)  # Build the model
-                model.build((None,) + self.image_shape)
-                model.summary()
-                if not exists(model_filepath):
-                    os.makedirs(model_filepath)
-                #cp_callback = tf.keras.callbacks.ModelCheckpoint(model_filepath+"/best_model_" + self.model_type + ".h5", monitor = #'val_f1_score', save_best_only = True)
-                #early_stopping = EarlyStopping(monitor='val_f1_score', patience=10, mode='max', restore_best_weights=True, baseline = 0.90)
-                checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=model_filepath + "_checkpoint_training",monitor = 'val_f1_score', save_weights_only=False,verbose=0)
-                if save_feature_maps:
-                    logging.info(f"save_feature_maps == {save_feature_maps}, WILL save feature maps")
-                    total_indices = np.random.permutation(len(self.validation_dataset))
-                    random_permutation = total_indices[:1]
-                    print(f"Feature map will feature: {self.validation_labels[random_permutation]}")
+        print(f"train_labels shape: {train_labels.shape}")
+        print(f"val_labels shape: {val_labels.shape}")
+        print(f"Unique train labels: {np.unique(train_labels)}")
+        print(f"Unique val labels: {np.unique(val_labels)}")
     
-                    try: 
-                        random_images = self.validation_dataset[random_permutation]
-                        print(f"Shape of randomly selected image: {np.shape(random_images)}")
-                    except:
-                        assert isinstance(self.validation_dataset, np.ndarray), "All datasets must be numpy arrays for this model type!"
-                        
-                    feature_map_output_filepath = "dual_finder/dual_finder/cnn/feature_maps/" + model_filepath
-                    if not exists(feature_map_output_filepath):
-                        os.makedirs(feature_map_output_filepath)
-                    feature_extractor = FeatureExtractor(model, random_images, feature_map_output_filepath)
-                    feature_map_callback = self.create_feature_callback(feature_extractor)
-                    callback_array = [checkpoint_callback, feature_map_callback]
-                else:
-                    logging.info(f"'save_feature_maps' == {save_feature_maps}, NOT saving feature maps")
-                    callback_array = [checkpoint_callback]
-                
-                history = model.fit(self.train_dataset, train_labels_one_hot, batch_size = self.batchSize, verbose = 2, validation_data = (self.validation_dataset, val_labels_one_hot), epochs = self.epoch, class_weight = class_weightsDict, callbacks = callback_array, shuffle = True, use_multiprocessing = True)
-                
-                warnings.filterwarnings("default", category=FutureWarning)
-                warnings.filterwarnings("default", category=UserWarning)
-                warnings.filterwarnings("default", category=DeprecationWarning)
+        model_creator = ModelCreator(self.image_shape, self.learningRate, self.num_classes, self.importance_score, display_architecture=self.display_architecture)
+        model = model_creator.create_expanded_model(dropout_rate)
+        model.build((None,) + self.image_shape)
+        model.summary()
+    
+        if not exists(model_filepath):
+            os.makedirs(model_filepath)
+    
+        checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(filepath=model_filepath + "_checkpoint_training", monitor='val_f1_score', save_weights_only=False, verbose=0)
+    
+        if save_feature_maps:
+            logging.info(f"save_feature_maps == {save_feature_maps}, WILL save feature maps")
+            total_indices = np.random.permutation(len(self.validation_dataset))
+            random_permutation = total_indices[:1]
+            print(f"Feature map will feature: {self.validation_labels[random_permutation]}")
+    
+            random_images = self.validation_dataset[random_permutation]
+            print(f"Shape of randomly selected image: {np.shape(random_images)}")
+    
+            feature_map_output_filepath = "dual_finder/dual_finder/cnn/feature_maps/" + model_filepath
+            if not exists(feature_map_output_filepath):
+                os.makedirs(feature_map_output_filepath)
+            feature_extractor = FeatureExtractor(model, random_images, feature_map_output_filepath)
+            feature_map_callback = self.create_feature_callback(feature_extractor)
+            callback_array = [checkpoint_callback, feature_map_callback]
+        else:
+            logging.info(f"'save_feature_maps' == {save_feature_maps}, NOT saving feature maps")
+            callback_array = [checkpoint_callback]
 
-                #model.save(model_filepath +"/saved_model", overwrite = True)
-                np.save(model_filepath + "/saved_history", history.history)
-                model.save(model_filepath + "/saved_model_" + str(self.epoch) + ".h5")#saving model in HDF5 format. Might be easier to load in the future
-                return history, model
-        if self.model_type == 'ViT':
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=FutureWarning)
-                warnings.filterwarnings("ignore", category=UserWarning)
-                warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-
-                model = create_ViT_model(image_shape, self.learningRate, num_classes)  # Build the model
-                model.build((None,) + image_shape)
-                model.summary()
-                if not exists(model_filepath):
-                    os.makedirs(model_filepath)
-                cp_callback = tf.keras.callbacks.ModelCheckpoint("best_model.h5", monitor = 'val_precision', save_best_only = True)
-                early_stopping = EarlyStopping(monitor='val_f1_score', patience=3, mode = "max", restore_best_weights = True)
-                history = model.fit(self.train_dataset, train_labels_one_hot, batch_size = self.batchSize, verbose = 1, validation_data = (self.validation_dataset, val_labels_one_hot), epochs = self.epoch, class_weight = class_weightsDict, callbacks = [cp_callback, early_stopping], shuffle = True, use_multiprocessing = True)
-
-                return history, model
+        print(f"train_images shape: {self.train_dataset.shape}")
+        print(f"train_labels shape: {train_labels.shape}")
+        print(f"val_images shape: {self.validation_dataset.shape}")
+        print(f"val_labels shape: {val_labels.shape}")
+        history = model.fit(self.train_dataset, train_labels, epochs=self.epoch, verbose=2, validation_data=(self.validation_dataset, val_labels), class_weight=class_weightsDict, callbacks=callback_array, shuffle=True, use_multiprocessing=True)
+    
+        np.save(model_filepath + "/saved_history", history.history)
+        model.save(model_filepath + "/saved_model_" + str(self.epoch) + ".h5")
+        return history, model
 
     def predict(self, model, dataset):
         # Predict the classes and confidence scores
@@ -209,8 +204,7 @@ class DualFinder:
         else:
             images = dataset
         num_images = min(len(images), 25)
-        
-        random_indices = random.sample(range(len(images)), num_images)
+        random_indices = np.random.choice(len(images), num_images, replace=False)
         selected_images = images[random_indices]
         selected_predictions = predicted_classes[random_indices]
         selected_confidences = confidence_scores[random_indices]
@@ -222,12 +216,13 @@ class DualFinder:
             plt.xticks([])
             plt.yticks([])
             plt.grid(False)
-            plt.imshow(selected_images[i], cmap="gray", vmin = np.percentile(selected_images[i], 1), vmax = np.percentile(selected_images[i], 99))
+            plt.imshow(selected_images[i], cmap="gray", vmin=np.percentile(selected_images[i], 1), vmax=np.percentile(selected_images[i], 99))
             predicted_label = self.class_names[selected_predictions[i]]
             confidence = selected_confidences[i]
             plt.title(f"{predicted_label}\n{confidence:.2f}")
         plt.tight_layout()
         plt.show()
+
         
     def transferLearning(self, num_layers_to_freeze, model_filepath, newEpochs, new_train_data, new_train_labels, new_val_data, new_val_labels, newBatch, newLearningRate, dropout_rate, train_synth = True, model = None, save_feature_maps = True, newClassWeightsDict = None):
         print(model_filepath)
