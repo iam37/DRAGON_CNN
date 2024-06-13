@@ -138,6 +138,10 @@ to the cutout_size parameter""",
     model. If this is set to None, then the default dropout rate
     in the specific model is used.""",
 )
+@click.option(
+    "--force_reload/--no_force_reload",
+    default=False,
+)
 def sweep_init(**kwargs):
     # Copy and log args
     args = {k: v for k, v in kwargs.items()}
@@ -185,6 +189,7 @@ def sweep_init(**kwargs):
             normalize=args["normalize"],
             transforms=T,
             split=k,
+            force_reload=args["force_reload"]
         )
         for k in splits
     }

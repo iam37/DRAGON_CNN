@@ -15,6 +15,7 @@ from utils import (
     load_tensor,
     load_data_dir,
     arsinh_normalize,
+    discover_devices
 )
 
 import logging
@@ -50,6 +51,8 @@ class FITSDataset(Dataset):
 
         # Initialize image metadata
         self.channels = channels
+
+        device = discover_devices()
 
         # Initializing cutout shape, assuming the shape is roughly square-like.
         self.cutout_shape = (channels, cutout_size, cutout_size)
@@ -96,7 +99,7 @@ class FITSDataset(Dataset):
                     load_path = self.data_dir / filename
 
                 # Loading and saving tensor to flattened name.
-                t = FITSDataset.load_fits_as_tensor(load_path, "cpu")
+                t = FITSDataset.load_fits_as_tensor(load_path, device)
                 torch.save(t, filepath)
 
         # If instead the files are loaded, preload the tensors!
@@ -157,7 +160,11 @@ class FITSDataset(Dataset):
     @staticmethod
     def load_fits_as_tensor(filename, device="cpu"):
         """Open a FITS file and convert it to a Torch tensor."""
-        fits_np = fits.getdata(filename, memmap=False)
+        try:
+            fits_np = fits.getdata(filename, memmap=False)
+        except OSError as e:
+            logging.error(f"ERROR: {filename} is empty or corrupted. Shutting down")
+            raise e
 
         # Replace NaNs with the specified value
         fits_np = np.nan_to_num(fits_np, nan=0)
