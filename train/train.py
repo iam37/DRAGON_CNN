@@ -199,7 +199,7 @@ def train(**kwargs):
         "nll": nn.NLLLoss(),
         "ce": nn.CrossEntropyLoss(),
     }
-    criterion = loss_dict[args["ce"]]
+    criterion = loss_dict["ce"]
 
     # Log into W&B
     wandb.login()
