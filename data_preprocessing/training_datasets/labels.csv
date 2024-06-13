@@ -1,6 +1,6 @@
 key,value
 empty_space,0
 single_agn,1
-merger,2
-dual_agn,3
-offset_agn,4
+offset_agn,2
+merger,3
+dual_agn,4
