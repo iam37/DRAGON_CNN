@@ -8,11 +8,13 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset
 import torch.multiprocessing as mp
+import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
 
 from utils import (
     load_tensor,
     load_data_dir,
-    arsinh_normalize
+    arsinh_normalize,
 )
 
 import logging
@@ -35,7 +37,10 @@ class FITSDataset(Dataset):
         normalize=False,  # Whether labels will be normalized.
         transforms=None,  # Supports a list of transforms or a single transform func.
         channels=1,
-        load_labels=True
+        load_labels=True,
+        num_classes=None,
+        force_reload=False,
+        n_workers=1
     ):
         # Set data_preprocessing directories
         self.data_dir = Path(data_dir)  # As long as you keep the label csv in one spot with all nested directories
@@ -68,7 +73,8 @@ class FITSDataset(Dataset):
             else:
                 self.labels = np.asarray(self.data_info[label_col])
 
-            self.num_classes = np.unique(self.labels)
+            # Declare number of classes automatically
+            self.num_classes = np.unique(self.labels) if num_classes is None else num_classes
         else:
             # generate fake labels of appropriate shape
             self.labels = np.ones((len(self.data_info), len(label_col)))  # Double check
@@ -76,30 +82,40 @@ class FITSDataset(Dataset):
 
         # If we haven't already generated PyTorch tensor files, generate them
         logging.info("Generating PyTorch tensors from FITS files...")
+        if force_reload:
+            logging.info("Force reload on, regenerating...")
+
         for filename in tqdm(self.filenames):
             flattened_filename = filename.replace('/', '_')  # Flattening out the directory and altering file path.
             filepath = self.tensors_path / (flattened_filename + ".pt")
-            if not filepath.is_file():  # If the tensors were not pre-generated, this returns True.
+            if not filepath.is_file() or force_reload:  # If the tensors were not pre-generated, this returns True.
                 # All files saved to one cutouts folder.
-                # load_path = self.cutouts_path / filename (If we want to maintain cutouts method)
-                load_path = self.data_dir / filename
-                t = FITSDataset.load_fits_as_tensor(load_path)
+                if self.cutouts_path.is_dir():
+                    load_path = self.cutouts_path / filename  # (If we want to maintain cutouts method)
+                else:
+                    load_path = self.data_dir / filename
 
+                # Loading and saving tensor to flattened name.
+                t = FITSDataset.load_fits_as_tensor(load_path, "cpu")
                 torch.save(t, filepath)
 
         # If instead the files are loaded, preload the tensors!
         n = len(self.filenames)
+        logging.info("Preloading PyTorch tensors before transfer...")
         filepaths = [fl.replace('/', '_') if '/' in fl else fl for fl in self.filenames]  # Flatten
-        logging.info(f"Preloading {n} tensors...")
         load_fn = partial(load_tensor, tensors_path=self.tensors_path)
-        with mp.Pool(mp.cpu_count()) as p:
+
+        with mp.Pool(min(n_workers, mp.cpu_count())) as p:
             # Load to NumPy, then convert to PyTorch (hack to solve system
             # issue with multiprocessing + PyTorch tensors)
             self.observations = list(
                 tqdm(p.imap(load_fn, filepaths), total=n)
             )
+        logging.info("Initialization of FITS Dataset Completed.")
 
-        print("Initialization of FITS Dataset Completed.")
+        self.sampler = None
+        if dist.is_available() and dist.is_initialized():
+            self.sampler = DistributedSampler(self, num_replicas=dist.get_world_size(), rank=dist.get_rank())
 
     def __getitem__(self, index):
         """Magic method to index into the dataset."""
@@ -134,8 +150,20 @@ class FITSDataset(Dataset):
         """Return the effective length of the dataset."""
         return len(self.labels)
 
+    def get_sampler(self):
+        """Return the sampler for DistributedSampler"""
+        return self.sampler
+
     @staticmethod
-    def load_fits_as_tensor(filename):
+    def load_fits_as_tensor(filename, device="cpu"):
         """Open a FITS file and convert it to a Torch tensor."""
         fits_np = fits.getdata(filename, memmap=False)
-        return torch.from_numpy(fits_np.astype(np.float32))
+
+        # Replace NaNs with the specified value
+        fits_np = np.nan_to_num(fits_np, nan=0)
+
+        tensor = torch.from_numpy(fits_np.astype(np.float32))
+        if device == 'cuda':
+            tensor = tensor.to(device)
+
+        return tensor

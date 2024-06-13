@@ -7,10 +7,12 @@ from functools import partial
 
 import wandb
 import os
+import socket
 import subprocess
 
 import torch
 import torch.nn as nn
+import ignite.distributed as idist
 import torch.distributed as dist
 import torch.optim as opt
 
@@ -19,23 +21,21 @@ import torch.multiprocessing as mp
 
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
-from train import create_trainer
+from train.gpu import create_trainer
 from utils import discover_devices, specify_dropout_rate
-
-from torch.utils.data.distributed import DistributedSampler
 
 # Global Sweep Configuration. This also affects early stopping for bad runs!
 sweep_config = {
     "method": "bayes",
     "metric": {"goal": "maximize", "name": "accuracy"},
     "parameters": {
-        "learning_rate": {"values": [0.001, 0.0001, 0.0005]},
-        "momentum": {"values": [1e-4, 1e-5, 1e-6]},
+        "learning_rate": {"values": [1e-4, 1e-5, 1e-6]},
+        "momentum": {"values": [1e-7, 1e-8, 1e-9]},
         "nesterov": {"values": [True, False]},
         "weight_decay": {"values": [1e-6, 1e-8, 1e-10]},
         "epochs": {"values": [10, 15, 20]},
         "batch_size": {"values": [16, 32, 64]},
-        "dropout_rate": {"values": [0, 0.5]}
+        "dropout_rate": {"values": [0, 0.25, 0.5]}
     },
     "early_terminate": {
         "type": "hyperband",
@@ -44,20 +44,15 @@ sweep_config = {
     }
 }
 
-
-def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
-
-
-def cleanup():
-    dist.destroy_process_group()
+def find_free_port():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
 
 
 def initialize_and_run_agent(rank, world_size, args):
-    setup(rank, world_size)
-
     # Modify args for DDP
     args["rank"] = rank
     args["world_size"] = world_size
@@ -84,9 +79,7 @@ def initialize_and_run_agent(rank, world_size, args):
     if args["dropout_rate"] is not None:
         specify_dropout_rate(model, args["dropout_rate"])
 
-    torch.cuda.set_device(rank)
-    model = model.to(rank)
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
+    model = idist.auto_model(model)
 
     # Select the desired transforms
     T = None
@@ -120,7 +113,7 @@ def initialize_and_run_agent(rank, world_size, args):
     wandb.login()
     wandb.require("service")
 
-    trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args, rank=rank)
+    trainer_func = partial(train, model=model, datasets=datasets, device=idist.get_local_rank(), criterion=criterion, args=args, rank=rank)
     p_args = {
         "sweep_id": args["sweep_id"],
         "function": trainer_func,
@@ -130,7 +123,6 @@ def initialize_and_run_agent(rank, world_size, args):
     }
 
     wandb.agent(**p_args)
-    cleanup()
 
 
 @click.command()
@@ -233,12 +225,27 @@ def sweep_init(**kwargs):
     args["sweep_id"] = sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
     logging.info(f"The W&B sweep ID for this run is {sweep_id}.")
 
-    if args["parallel"]:
-        world_size = torch.cuda.device_count()
-        logging.info(f'Parallelizing sweeps over {world_size} devices.')
-        mp.spawn(initialize_and_run_agent, args=(world_size, args), nprocs=world_size, join=True)
-    else:
-        initialize_and_run_agent(0, 1, args)
+    os.environ["SLURM_NTASKS"] = str(args["n_sweeps"] * args["n_workers"])
+    dist_config = {
+        "nproc_per_node": args["n_workers"],
+        "master_addr": "master",
+        "master_port": 15000,
+    }
+
+    os.environ["MASTER_ADDR"] = "localhost"  # or the IP address of the master node
+    os.environ["MASTER_PORT"] = "8888"  # or another available port
+    os.environ["SLURM_NTASKS"] = str(args["n_sweeps"] * args["n_workers"])
+
+    print(f"MASTER_ADDR: {os.environ['MASTER_ADDR']}")
+    print(f"MASTER_PORT: {os.environ['MASTER_PORT']}")
+    print(f"SLURM_NTASKS: {os.environ['SLURM_NTASKS']}")
+
+    # TODO: EMAIL
+
+    os.environ["MASTER_PORT"] = "15000"
+    logging.info(os.environ["MASTER_PORT"])
+    with idist.Parallel(backend='nccl', **dist_config) as parallel:
+        parallel.run(initialize_and_run_agent, rdzv_endpoint="localhost:15000")  # This is wrong.
 
     # Housekeeping
     sweep_path = f'{args["entity"]}/{args["experiment_name"]}/{sweep_id}'
@@ -270,13 +277,13 @@ def train(model, datasets, criterion, args, rank):
             )
             run.name = args["run_name"] + "_" + name_str
 
-        optimizer = opt.SGD(
+        optimizer = idist.auto_optim(opt.SGD(
             model.parameters(),
             lr=wandb.config.learning_rate,
             momentum=wandb.config.momentum,
             nesterov=wandb.config.nesterov,
             weight_decay=wandb.config.weight_decay
-        )
+        ))
 
         # Create a DataLoader factory based on command-line args
         loader_factory = partial(
@@ -293,7 +300,7 @@ def train(model, datasets, criterion, args, rank):
 
         # Set up trainer
         trainer = create_trainer(
-            model, optimizer, criterion, loaders, args["device"]
+            model, optimizer, criterion, loaders, args["device"], args["n_classes"]
         )
 
         logging.info("Trainer created.")
@@ -318,10 +325,5 @@ def train(model, datasets, criterion, args, rank):
 if __name__ == "__main__":
     log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     logging.basicConfig(level=logging.INFO, format=log_fmt)
-
-    # Setting multiprocess spawn method.
-    if torch.cuda.is_available():
-        mp.set_start_method('spawn')
-        logging.info("Setting multiprocessing start method to 'spawn'.")
 
     sweep_init()

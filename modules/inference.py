@@ -8,12 +8,15 @@ import torch.nn as nn
 from tqdm import tqdm
 
 from data_preprocessing import FITSDataset, get_data_loader
+import kornia.augmentation as K
+
 from cnn import model_factory
 from utils import (
     discover_devices,
     enable_dropout,
     specify_dropout_rate,
     load_data_dir,
+    pad_collate_fn
 )
 
 
@@ -25,9 +28,11 @@ def predict(
     parallel=False,
     batch_size=256,
     n_workers=1,
+    num_classes=6,
     model_type="dragon",
     mc_dropout=False,
     dropout_rate=None,
+    apply_softmax=True
 ):
     """Using the model defined in model path, return the output values for
     the given set of images"""
@@ -40,6 +45,7 @@ def predict(
     model_args = {
         "cutout_size": cutout_size,
         "channels": channels,
+        "num_classes": num_classes
     }
 
     if "drp" in model_type.split("_"):
@@ -65,7 +71,10 @@ def predict(
 
     # Create a data_preprocessing loader
     loader = get_data_loader(
-        dataset, batch_size=batch_size, n_workers=n_workers, shuffle=False
+        dataset,
+        batch_size=batch_size,
+        n_workers=n_workers,
+        shuffle=False,
     )
 
     logging.info("Performing predictions...")
@@ -80,8 +89,18 @@ def predict(
     with torch.no_grad():
         for data in tqdm(loader):
             X, _ = data
-            yh.append(model(X.to(device)))
-    return torch.cat(yh)
+            X = X.to(device)
+            outputs = model(X)
+            if apply_softmax:
+                outputs = nn.functional.softmax(outputs, dim=1)
+            yh.append(outputs)
+
+    yh = torch.cat(yh)
+
+    # Get the predicted class indices
+    _, predicted_labels = torch.max(yh, 1)
+
+    return predicted_labels.cpu().numpy()
 
 
 @click.command()
@@ -129,11 +148,11 @@ def predict(
               to use multiple GPUs when they are available""",
 )
 @click.option(
-    "--label_cols",
+    "--label_col",
     type=str,
-    default="bt_g",
+    default="classes",
     help="""Enter the label column(s) separated by commas. Note
-    that you should pass the exactly same argument for label_cols
+    that you should pass the exactly same argument for label_col
     as was used during the training phase (of the model being used
     for inference). """,
 )
@@ -149,6 +168,7 @@ def predict(
     help="""The number of times to run inference. This is helpful
     when usng mc_dropout""",
 )
+@click.option("--n_classes", type=int, default=6)
 @click.option(
     "--ini_run_num",
     type=int,
@@ -168,8 +188,8 @@ def predict(
     be set equal to the rate used during training.""",
 )
 @click.option(
-    "--transform/--no-transform",
-    default=False,
+    "--crop /--no-crop",
+    default=True,
     help="""If True, the images are passed through a cropping transformation
 to ensure proper cutout size""",
 )
@@ -192,13 +212,13 @@ def main(
     normalize,
     batch_size,
     n_workers,
-    label_cols,
+    label_col,
     model_type,
     mc_dropout,
     dropout_rate,
-    transform,
-    errors,
+    crop,
     n_runs,
+    n_classes,
     ini_run_num,
     labels,
 ):
@@ -213,10 +233,14 @@ def main(
     slug = None
 
     # Create label cols array
-    label_cols_arr = label_cols.split(",")
+    label_col_arr = label_col.split(",")
 
     # Transforming the dataset to the proper cutout size
     T = None
+    if crop:
+        T = K.CenterCrop(cutout_size)
+
+    # Test
 
     # Load the data_preprocessing and create a data_preprocessing loader
     logging.info("Loading images to device...")
@@ -227,8 +251,8 @@ def main(
         split=split,
         cutout_size=cutout_size,
         channels=channels,
-        label_col=label_cols_arr,
-        transform=T,
+        label_col=label_col_arr,
+        transforms=T,
         load_labels=False
     )
 
@@ -245,20 +269,19 @@ def main(
             parallel=parallel,
             batch_size=batch_size,
             n_workers=n_workers,
+            num_classes=n_classes,
             model_type=model_type,
             mc_dropout=mc_dropout,
             dropout_rate=dropout_rate,
         )
 
-        preds = preds.cpu().numpy()
-
         # Write a CSV of predictions
         catalog = load_data_dir(data_dir, slug, split)
+        catalog["predicted_labels"] = preds
 
-        for i, label in enumerate(label_cols_arr):
-            catalog[f"preds_{label}"] = preds[:, i]
-
-        catalog.to_csv(output_path + f"inf_{run_num}.csv", index=False)
+        cat_path = output_path + f"inf_{run_num}.csv"
+        logging.info(f"Catalog saved to {cat_path}")
+        catalog.to_csv(cat_path, index=False)
 
 
 if __name__ == "__main__":

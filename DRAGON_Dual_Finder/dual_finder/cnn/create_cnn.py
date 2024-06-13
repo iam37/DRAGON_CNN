@@ -3,70 +3,76 @@ import tensorflow as tf
 import keras
 from keras import layers, models
 
-# How can I import the functions from preprocess_data module?
+class MulticlassPrecision(tf.keras.metrics.Metric):
+    def __init__(self, num_classes, name='multiclass_precision', **kwargs):
+        super(MulticlassPrecision, self).__init__(name=name, **kwargs)
+        self.num_classes = num_classes
+        self.true_positives = self.add_weight(name='tp', shape=(num_classes,), initializer='zeros')
+        self.false_positives = self.add_weight(name='fp', shape=(num_classes,), initializer='zeros')
+    
+    @tf.function
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_true = tf.argmax(y_true, axis=-1)
+        y_pred = tf.argmax(y_pred, axis=-1)
+        y_true = tf.cast(y_true, tf.int32)
+        y_pred = tf.cast(y_pred, tf.int32)
+        
+        for i in range(self.num_classes):
+            true_pos = tf.reduce_sum(tf.cast((y_true == i) & (y_pred == i), tf.float32))
+            false_pos = tf.reduce_sum(tf.cast((y_true != i) & (y_pred == i), tf.float32))
+            
+            self.true_positives.assign_add(tf.tensor_scatter_nd_add(self.true_positives, [[i]], [true_pos]))
+            self.false_positives.assign_add(tf.tensor_scatter_nd_add(self.false_positives, [[i]], [false_pos]))
+    
+    def result(self):
+        precisions = self.true_positives / (self.true_positives + self.false_positives + tf.keras.backend.epsilon())
+        macro_precision = tf.reduce_mean(precisions)
+        return macro_precision
+    
+    def reset_state(self):
+        for v in self.variables:
+            v.assign(tf.zeros_like(v))
+
+
+class MulticlassRecall(tf.keras.metrics.Metric):
+    def __init__(self, num_classes, name='multiclass_recall', **kwargs):
+        super(MulticlassRecall, self).__init__(name=name, **kwargs)
+        self.num_classes = num_classes
+        self.true_positives = self.add_weight(name='tp', shape=(num_classes,), initializer='zeros')
+        self.false_negatives = self.add_weight(name='fn', shape=(num_classes,), initializer='zeros')
+    
+    @tf.function
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_true = tf.argmax(y_true, axis=-1)
+        y_pred = tf.argmax(y_pred, axis=-1)
+        y_true = tf.cast(y_true, tf.int32)
+        y_pred = tf.cast(y_pred, tf.int32)
+        
+        for i in range(self.num_classes):
+            true_pos = tf.reduce_sum(tf.cast((y_true == i) & (y_pred == i), tf.float32))
+            false_neg = tf.reduce_sum(tf.cast((y_true == i) & (y_pred != i), tf.float32))
+            
+            self.true_positives.assign_add(tf.tensor_scatter_nd_add(self.true_positives, [[i]], [true_pos]))
+            self.false_negatives.assign_add(tf.tensor_scatter_nd_add(self.false_negatives, [[i]], [false_neg]))
+    
+    def result(self):
+        recalls = self.true_positives / (self.true_positives + self.false_negatives + tf.keras.backend.epsilon())
+        macro_recall = tf.reduce_mean(recalls)
+        return macro_recall
+    
+    def reset_stats(self):
+        for v in self.variables:
+            v.assign(tf.zeros_like(v))
+
+
 
 class ModelCreator:
-    def __init__(self, image_shape, learning_rate, num_classes, display_architecture = True):
+    def __init__(self, image_shape, learning_rate, num_classes, importance_score, display_architecture = True):
         self.image_shape = image_shape
         self.learning_rate = learning_rate
         self.num_classes = num_classes
         self.display_architecture = display_architecture
-        
-    def f1_score(self, y_true, y_pred):
-        precision = tf.keras.metrics.Precision(thresholds=0.5)
-        recall = tf.keras.metrics.Recall(thresholds=0.5)
-        precision.update_state(y_true, y_pred)
-        recall.update_state(y_true, y_pred)
-        precision_result = precision.result()
-        recall_result = recall.result()
-        f1 = 2 * ((precision_result * recall_result) / (precision_result + recall_result + tf.keras.backend.epsilon()))
-        precision.reset_states()
-        recall.reset_states()
-        return f1
-    @staticmethod
-    def static_f1_score(y_true, y_pred):
-        precision = tf.keras.metrics.Precision(thresholds=0.5)
-        recall = tf.keras.metrics.Recall(thresholds=0.5)
-        precision.update_state(y_true, y_pred)
-        recall.update_state(y_true, y_pred)
-        precision_result = precision.result()
-        recall_result = recall.result()
-        f1 = 2 * ((precision_result * recall_result) / (precision_result + recall_result + tf.keras.backend.epsilon()))
-        precision.reset_states()
-        recall.reset_states()
-        return f1
-    def MCC(self, y_true, y_pred):
-        true_positives = tf.keras.metrics.TruePositives()
-        true_negatives = tf.keras.metrics.TrueNegatives()
-        false_positives = tf.keras.metrics.FalsePositives()
-        false_negatives = tf.keras.metrics.FalseNegatives()
-        true_positives.update_state(y_true, y_pred)
-        true_negatives.update_state(y_true, y_pred)
-        false_positives.update_state(y_true, y_pred)
-        false_negatives.update_state(y_true, y_pred)
-        true_positives_result = true_positives.result()
-        true_negatives_result = true_negatives.result()
-        false_positives_result = false_positives.result()
-        false_negatives_result = false_negatives.result()
-        mcc = ((true_positives_result*true_negatives_result) -
-               (false_positives_result*false_negatives_result))/np.sqrt((true_positives_result + false_positives_result)*(true_positives_result + false_negatives_result)*(true_negatives_result + false_positives_result)*(true_negatives_result + false_negatives_result))
-        return mcc
-    @staticmethod
-    def static_MCC(y_true, y_pred):
-        true_positives = tf.keras.metrics.TruePositives()
-        true_negatives = tf.keras.metrics.TrueNegatives()
-        false_positives = tf.keras.metrics.FalsePositives()
-        false_negatives = tf.keras.metrics.FalseNegatives()
-        true_positives.update_state(y_true, y_pred)
-        true_negatives.update_state(y_true, y_pred)
-        false_positives.update_state(y_true, y_pred)
-        false_negatives.update_state(y_true, y_pred)
-        true_positives_result = true_positives.result()
-        true_negatives_result = true_negatives.result()
-        false_positives_result = false_positives.result()
-        false_negatives_result = false_negatives.result()
-        mcc = ((true_positives_result*true_negatives_result) - (false_positives_result*false_negatives_result))/np.sqrt((true_positives_result + false_positives_result)*(true_positives_result + false_negatives_result)*(true_negatives_result + false_positives_result)*(true_negatives_result + false_negatives_result))
-        return mcc
+        self.importance_score = importance_score
     def create_model(self, dropout, display_architecture = True):
         model = models.Sequential()
         model.add(layers.Input(shape=(60, 60, 1)))
@@ -102,10 +108,8 @@ class ModelCreator:
         optimized = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     
         model.compile(optimizer=optimized, loss=tf.keras.losses.CategoricalCrossentropy(),
-                      metrics=[tf.keras.metrics.CategoricalAccuracy(name='accuracy'),
-                               tf.keras.metrics.Recall(name='recall'),
-                               tf.keras.metrics.Precision(name='precision'),
-                               tf.keras.metrics.F1Score(name = 'f1_score')], run_eagerly=False)
+                      metrics=[WeightedPrecision(num_classes=self.num_classes, importance_scores=self.importance_scores),
+                               WeightedRecall(num_classes=self.num_classes, importance_scores=self.importance_scores)], run_eagerly=False)
     
         if display_architecture:
             model.summary()
@@ -151,6 +155,7 @@ class ModelCreator:
         model.add(layers.Flatten())
         model.add(layers.Dense(1024, activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(0.5))
+        print(self.num_classes)
         model.add(layers.Dense(self.num_classes, activation = 'softmax'))
         
         lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=self.learning_rate,
@@ -159,10 +164,7 @@ class ModelCreator:
         optimized = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     
         model.compile(optimizer=optimized, loss=tf.keras.losses.CategoricalCrossentropy(),
-                      metrics=[tf.keras.metrics.CategoricalAccuracy(name='accuracy'),
-                               tf.keras.metrics.Recall(name='recall'),
-                               tf.keras.metrics.Precision(name='precision'),
-                               tf.keras.metrics.F1Score(name = 'f1_score')], run_eagerly=False)
+                      metrics=[tf.keras.metrics.CategoricalAccuracy(name='accuracy'),tf.keras.metrics.Precision(name = 'precision'), tf.keras.metrics.Recall(name = 'recall'), tf.keras.metrics.F1Score(name='f1_score')], run_eagerly=False)
     
         if display_architecture:
             model.summary()
