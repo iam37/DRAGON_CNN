@@ -15,13 +15,14 @@ def crop_center(img, cropx, cropy):
     #print(starty)
     return img[starty:starty + cropy, startx:startx + cropx, ...]
 
-def augment_dataset(images, num_augmented_images=20):
+def augment_dataset(images, image_names, num_augmented_images=20):
     augmented_images = []
+    augmented_image_names = []
     if images.ndim == 3:
         images = images[..., np.newaxis]
     for i, image in tqdm(enumerate(images)):
         augmented_images.append(image)
-
+        augmented_image_names.append(image_names[i])
         # Perform data augmentation multiple times to create more augmented images
         for _ in range(num_augmented_images):
 
@@ -30,16 +31,20 @@ def augment_dataset(images, num_augmented_images=20):
             augmented_image = tf.image.rot90(image, k=tf.cast(angle / (0.5*np.pi), tf.int32))
 
             augmented_images.append(augmented_image)
+            augmented_image_names.append(image_names[i])
 
+    augmented_image_names = np.asarray(augmented_image_names)
     augmented_images = np.array(augmented_images)
 
-    return augmented_images
+    return augmented_images, augmented_image_names
     
 def load_images(filepath, label, crop_center_fn, augment_fn, num_augmented_images):
     images = []
     labels = []
+    image_names = []
     logging.info(f"Loading images from {filepath} with label {label}...")
     for image_file in tqdm(glob.glob(filepath + "*.fits")):
+        image_names.append(image_file)
         try:
             with fits.open(image_file, memmap=False) as hdul:
                 if 'star' in label:
@@ -59,60 +64,65 @@ def load_images(filepath, label, crop_center_fn, augment_fn, num_augmented_image
             continue
     images = np.asarray(images)
     if augment_fn and num_augmented_images:
-        images = augment_fn(images, num_augmented_images=num_augmented_images)
+        images, image_names = augment_fn(images, image_names, num_augmented_images=num_augmented_images)
     labels = [label] * len(images)  # Ensure labels are appended correctly for augmented images
     labels = np.asarray(labels)
     print(f"Loaded {len(images)} images with {len(labels)} labels from {filepath}")
-    return images, labels
+    return images, labels, image_names
 def create_dataset(empty_sky_filepath = None, single_image_filepath = None, dual_image_filepath = None, offset_image_filepath = None, stellar_filepath = None, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
     all_images = []
     all_labels = []
-
+    all_filepaths = []
     if empty_sky_filepath:
-        empty_sky_images, empty_sky_labels = load_images(empty_sky_filepath, "empty_sky", crop_center, augment_dataset, 3)
+        empty_sky_images, empty_sky_labels, empty_sky_names = load_images(empty_sky_filepath, "empty_sky", crop_center, augment_dataset, 3)
         all_images.append(empty_sky_images)
         all_labels.append(empty_sky_labels)
-        
+        all_filepaths.append(empty_sky_names)
     if single_image_filepath:
-        single_images, single_labels = load_images(single_image_filepath, "single_AGN", crop_center, augment_dataset, 5)
+        single_images, single_labels, single_image_names = load_images(single_image_filepath, "single_AGN", crop_center, augment_dataset, 5)
         print(f"Length of single AGN images: {len(single_images)}")
         all_images.append(single_images)
         all_labels.append(single_labels)
-        
+        all_filepaths.append(single_image_names)
     if dual_image_filepath:
-        dual_images, dual_labels = load_images(dual_image_filepath, "dual_AGN", crop_center, None, None)
+        dual_images, dual_labels, dual_image_names = load_images(dual_image_filepath, "dual_AGN", crop_center, None, None)
         logging.info("expanding dims")
         dual_images = np.expand_dims(dual_images, axis = -1)
         all_images.append(dual_images)
         all_labels.append(dual_labels)
+        all_filepaths.append(dual_image_names)
         
     if offset_image_filepath:
-        offset_images, offset_labels = load_images(offset_image_filepath, "offset_AGN", crop_center, None, None)
+        offset_images, offset_labels, offset_image_names = load_images(offset_image_filepath, "offset_AGN", crop_center, None, None)
         logging.info("expanding dims")
         offset_images = np.expand_dims(offset_images, axis = -1)
         all_images.append(offset_images)
         all_labels.append(offset_labels)
+        all_filepaths.append(offset_image_names)
         
     if stellar_filepath:
-        stellar_images, stellar_labels = load_images(stellar_filepath, "star_AGN_align", crop_center, None, None)
+        stellar_images, stellar_labels, stellar_image_names, = load_images(stellar_filepath, "star_AGN_align", crop_center, None, None)
         print(f"Length of stellar images: {stellar_images.shape}")
         logging.info("expanding dims")
         stellar_images = np.expand_dims(stellar_images, axis = -1)
         all_images.append(stellar_images)
         all_labels.append(stellar_labels)
+        all_filepaths.append(stellar_image_names)
     
     total_images = np.concatenate(all_images, axis = 0)
     #print(np.shape(all_labels))
     total_labels = np.concatenate(all_labels, axis = 0)
+    total_filepaths = np.concatenate(all_filepaths, axis = 0)
     print(f"Total images: {np.shape(total_images)}")
     print(f"Total labels: {np.shape(total_labels)}")
-
+    print(f"Total filepaths: {np.shape(total_filepaths)}")
     #np.random.seed(42)
     indices = np.arange(total_images.shape[0])
     np.random.shuffle(indices)
 
     shuffled_images = total_images[indices]
     shuffled_labels = total_labels[indices]
+    shuffled_filepaths = total_filepaths[indices]
 
     train_size = int(train * total_images.shape[0])
     val_size = int(val * total_images.shape[0])
@@ -120,21 +130,27 @@ def create_dataset(empty_sky_filepath = None, single_image_filepath = None, dual
 
     train_images = shuffled_images[:train_size]
     train_labels = shuffled_labels[:train_size]
+    train_filepaths = shuffled_filepaths[:train_size]
 
     val_images = shuffled_images[train_size:train_size + val_size]
     val_labels = shuffled_labels[train_size:train_size + val_size]
+    val_filepaths = shuffled_filepaths[train_size:train_size + val_size]
 
     test_images = shuffled_images[train_size + val_size:]
     test_labels = shuffled_labels[train_size + val_size:]
+    test_filepaths = shuffled_filepaths[train_size + val_size:]
 
     print(f"Train_dataset: {train_images.shape}")
     print(f"Train_labels: {train_labels.shape}")
+    print(f"Train_filepaths: {train_filepaths.shape}")
     print(f"Val_dataset: {val_images.shape}")
     print(f"Val_labels: {val_labels.shape}")
+    print(f"Val_filepaths: {val_filepaths.shape}")
     print(f"Test_dataset: {test_images.shape}")
     print(f"Test_labels: {test_labels.shape}")
+    print(f"Test_filepaths: {test_filepaths.shape}")
 
-    return (train_images, train_labels), (val_images, val_labels), (test_images, test_labels)
+    return (train_images, train_labels, train_filepaths), (val_images, val_labels, val_filepaths), (test_images, test_labels, test_filepaths)
 
 def make_datasets_other_bands(fltr, model = 'B'):
     flux_ratio_prefix = np.round(np.arange(0.1, 1.0, 0.1), 1)

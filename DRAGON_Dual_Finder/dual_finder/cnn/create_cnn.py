@@ -120,21 +120,21 @@ class ModelCreator:
         model.add(layers.Input(shape=self.image_shape))
         model.add(layers.Rescaling(1./255))
     
-        model.add(layers.Conv2D(64, (3, 3), padding='same', strides=(2, 2), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Conv2D(64, (3, 3), padding='same', strides=(1, 1), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(dropout))
         model.add(layers.BatchNormalization())
         model.add(layers.AveragePooling2D((2, 2), strides=(2, 2)))
     
-        model.add(layers.Conv2D(96, (3, 3), padding='same', strides=(2, 2), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Conv2D(96, (3, 3), padding='same', strides=(1, 1), activation=tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(dropout))
         model.add(layers.BatchNormalization())
         model.add(layers.AveragePooling2D((2, 2), strides=(2, 2)))
     
-        model.add(layers.Conv2D(128, (3,3), padding='same', strides=(2, 2), activation=tf.nn.leaky_relu,  kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Conv2D(128, (3,3), padding='same', strides=(1, 1), activation=tf.nn.leaky_relu,  kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(dropout))
         model.add(layers.BatchNormalization())
 
-        model.add(layers.Conv2D(256, (3,3), padding='same', strides = (2,2), activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
+        model.add(layers.Conv2D(256, (3,3), padding='same', strides = (1, 1), activation = tf.nn.leaky_relu, kernel_regularizer = tf.keras.regularizers.l2(0.01)))
         model.add(layers.Dropout(dropout))
         model.add(layers.BatchNormalization())
 

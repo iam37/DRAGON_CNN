@@ -185,13 +185,13 @@ class DualFinder:
         print(f"train_labels shape: {train_labels.shape}")
         print(f"val_images shape: {self.validation_dataset.shape}")
         print(f"val_labels shape: {val_labels.shape}")
-        history = model.fit(self.train_dataset, train_labels, epochs=self.epoch, verbose=2, validation_data=(self.validation_dataset, val_labels), class_weight=class_weightsDict, callbacks=callback_array, shuffle=True, use_multiprocessing=True)
+        history = model.fit(self.train_dataset, train_labels, epochs=self.epoch, verbose=1, validation_data=(self.validation_dataset, val_labels), class_weight=class_weightsDict, callbacks=callback_array, shuffle=True, use_multiprocessing=True)
     
         np.save(model_filepath + "/saved_history", history.history)
         model.save(model_filepath + "/saved_model_" + str(self.epoch) + ".h5")
         return history, model
 
-    def predict(self, model, dataset):
+    def predict(self, model, dataset, filepaths):
         # Predict the classes and confidence scores
         predictions = model.predict(dataset)
         predicted_classes = np.argmax(predictions, axis=1)
@@ -206,6 +206,7 @@ class DualFinder:
         num_images = min(len(images), 25)
         random_indices = np.random.choice(len(images), num_images, replace=False)
         selected_images = images[random_indices]
+        selected_filepaths = filepaths[random_indices]
         selected_predictions = predicted_classes[random_indices]
         selected_confidences = confidence_scores[random_indices]
     
@@ -217,9 +218,11 @@ class DualFinder:
             plt.yticks([])
             plt.grid(False)
             plt.imshow(selected_images[i], cmap="gray", vmin=np.percentile(selected_images[i], 1), vmax=np.percentile(selected_images[i], 99))
+            #print(len(selected_filepaths[i]))
             predicted_label = self.class_names[selected_predictions[i]]
             confidence = selected_confidences[i]
-            plt.title(f"{predicted_label}\n{confidence:.2f}")
+            plt.title(f"{predicted_label}\n{confidence:.2f}", fontsize = 10)
+            print(f"{selected_filepaths[i][:-20]} with predicted label: {predicted_label} and confidence: {confidence}")
         plt.tight_layout()
         plt.show()
 
