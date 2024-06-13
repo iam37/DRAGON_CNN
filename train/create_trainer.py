@@ -39,9 +39,17 @@ def create_trainer(model, optimizer, criterion, loaders, device):
         # Handle the confusion matrix separately
         cm = metrics["cm"].cpu().numpy()
         class_names = [str(i) for i in range(wandb.config["num_classes"])]
+
+        # Calculate true and predicted labels from the confusion matrix
+        y_true, y_pred = [], []
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                y_true.extend([i] * int(cm[i, j]))
+                y_pred.extend([j] * int(cm[i, j]))
+
         cm_plot = wandb.plot.confusion_matrix(probs=None,
-                                              y_true=cm.argmax(axis=1),
-                                              preds=cm.argmax(axis=0),
+                                              y_true=y_true,
+                                              preds=y_pred,
                                               class_names=class_names)
 
         # Log other metrics and the confusion matrix plot
@@ -58,8 +66,7 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_devel_results(trainer):
         for L, loader in loaders.items():
-            log_metrics(trainer, loaders["devel"], log_prefix=f"{L}_")
-            TerminateOnNan()
+            log_metrics(trainer, loader, log_prefix=f"{L}_")
 
     @trainer.on(Events.ITERATION_COMPLETED)
     def clip_gradients(engine):
