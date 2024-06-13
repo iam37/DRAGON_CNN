@@ -1,0 +1,152 @@
+wandb_version: 1
+
+num_classes:
+  desc: null
+  value: 5
+architecture:
+  desc: null
+  value: CNN
+_wandb:
+  desc: null
+  value:
+    python_version: 3.11.8
+    cli_version: 0.17.1
+    framework: ignite
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1718306458
+    t:
+      1:
+      - 1
+      - 10
+      - 41
+      - 55
+      - 79
+      2:
+      - 1
+      - 10
+      - 41
+      - 55
+      - 79
+      3:
+      - 5
+      - 16
+      - 23
+      4: 3.11.8
+      5: 0.17.1
+      8:
+      - 5
+      - 9
+      13: linux-x86_64
+    visualize:
+      train_confusion_matrix:
+        panel_type: Vega2
+        panel_config:
+          panelDefId: wandb/confusion_matrix/v1
+          fieldSettings:
+            Actual: Actual
+            Predicted: Predicted
+            nPredictions: nPredictions
+          stringSettings:
+            title: ''
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - name: runSets
+              args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - name: id
+                fields: []
+              - name: name
+                fields: []
+              - name: _defaultColorIndex
+                fields: []
+              - name: summaryTable
+                args:
+                - name: tableKey
+                  value: train_confusion_matrix_table
+                fields: []
+      devel_confusion_matrix:
+        panel_type: Vega2
+        panel_config:
+          panelDefId: wandb/confusion_matrix/v1
+          fieldSettings:
+            Actual: Actual
+            Predicted: Predicted
+            nPredictions: nPredictions
+          stringSettings:
+            title: ''
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - name: runSets
+              args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - name: id
+                fields: []
+              - name: name
+                fields: []
+              - name: _defaultColorIndex
+                fields: []
+              - name: summaryTable
+                args:
+                - name: tableKey
+                  value: devel_confusion_matrix_table
+                fields: []
+      test_confusion_matrix:
+        panel_type: Vega2
+        panel_config:
+          panelDefId: wandb/confusion_matrix/v1
+          fieldSettings:
+            Actual: Actual
+            Predicted: Predicted
+            nPredictions: nPredictions
+          stringSettings:
+            title: ''
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - name: runSets
+              args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - name: id
+                fields: []
+              - name: name
+                fields: []
+              - name: _defaultColorIndex
+                fields: []
+              - name: summaryTable
+                args:
+                - name: tableKey
+                  value: test_confusion_matrix_table
+                fields: []
+batch_size:
+  desc: null
+  value: 16
+dropout_rate:
+  desc: null
+  value: 0.5
+epochs:
+  desc: null
+  value: 15
+learning_rate:
+  desc: null
+  value: 0.001
+momentum:
+  desc: null
+  value: 0.0001
+nesterov:
+  desc: null
+  value: false
+weight_decay:
+  desc: null
+  value: 0.01
