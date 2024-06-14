@@ -85,6 +85,7 @@ def create_trainer(model, optimizer, criterion, loaders, device):
 
         logging.info("Terminating run explicitly.")
         trainer.terminate()
+        evaluator.terminate()
 
 
     return trainer
