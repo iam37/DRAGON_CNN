@@ -191,7 +191,7 @@ class DualFinder:
         model.save(model_filepath + "/saved_model_" + str(self.epoch) + ".h5")
         return history, model
 
-    def predict(self, model, dataset, filepaths):
+    def predict(self, model, dataset, filepaths, true_labels):
         # Predict the classes and confidence scores
         predictions = model.predict(dataset)
         predicted_classes = np.argmax(predictions, axis=1)
@@ -209,6 +209,7 @@ class DualFinder:
         selected_filepaths = filepaths[random_indices]
         selected_predictions = predicted_classes[random_indices]
         selected_confidences = confidence_scores[random_indices]
+        selected_true_labels = true_labels[random_indices]
     
         # Plot the images with their predicted classes and confidence scores
         plt.figure(figsize=(10, 10))
@@ -217,13 +218,17 @@ class DualFinder:
             plt.xticks([])
             plt.yticks([])
             plt.grid(False)
-            plt.imshow(selected_images[i], cmap="gray", vmin=np.percentile(selected_images[i], 1), vmax=np.percentile(selected_images[i], 99))
+            plt.imshow(selected_images[i], cmap="viridis", vmin=np.percentile(selected_images[i], 1), vmax=np.percentile(selected_images[i], 99))
             #print(len(selected_filepaths[i]))
             predicted_label = self.class_names[selected_predictions[i]]
             confidence = selected_confidences[i]
-            plt.title(f"{predicted_label}\n{confidence:.2f}", fontsize = 10)
+            plt.title(f"True: {selected_true_labels[i]}, pred: {predicted_label}\n{confidence:.2f}", fontsize = 6)
             print(f"{selected_filepaths[i][:-20]} with predicted label: {predicted_label} and confidence: {confidence}")
         plt.tight_layout()
+        save_filepath = "saved_test_predictions/"
+        if not exists(save_filepath):
+            os.makedirs(save_filepath)
+        plt.savefig(save_filepath+"randomly_selected_images.png")
         plt.show()
 
         

@@ -1,0 +1,62 @@
+wandb_version: 1
+
+num_classes:
+  desc: null
+  value: 4
+architecture:
+  desc: null
+  value: CNN
+_wandb:
+  desc: null
+  value:
+    python_version: 3.11.8
+    cli_version: 0.17.1
+    framework: ignite
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1718302476
+    t:
+      1:
+      - 1
+      - 10
+      - 41
+      - 55
+      - 79
+      2:
+      - 1
+      - 10
+      - 41
+      - 55
+      - 79
+      3:
+      - 2
+      - 5
+      - 16
+      - 23
+      4: 3.11.8
+      5: 0.17.1
+      8:
+      - 5
+      - 9
+      13: linux-x86_64
+batch_size:
+  desc: null
+  value: 64
+dropout_rate:
+  desc: null
+  value: 0
+epochs:
+  desc: null
+  value: 15
+learning_rate:
+  desc: null
+  value: 0.0005
+momentum:
+  desc: null
+  value: 1.0e-06
+nesterov:
+  desc: null
+  value: false
+weight_decay:
+  desc: null
+  value: 0.1
