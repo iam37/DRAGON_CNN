@@ -32,6 +32,10 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     # Function to log metrics to wandb
     def log_metrics(trainer, loader, log_prefix=""):
         logging.info(f"Logging metrics for {log_prefix}")
+
+        # Reset evaluator state before running evaluation
+        evaluator.state.metrics = {}
+
         evaluator.run(loader)
         metrics = evaluator.state.metrics
         log_dict = {f"{log_prefix}{k}": v for k, v in metrics.items() if k != "cm"}
@@ -39,9 +43,17 @@ def create_trainer(model, optimizer, criterion, loaders, device):
         # Handle the confusion matrix separately
         cm = metrics["cm"].cpu().numpy()
         class_names = [str(i) for i in range(wandb.config["num_classes"])]
+
+        # Calculate true and predicted labels from the confusion matrix
+        y_true, y_pred = [], []
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                y_true.extend([i] * int(cm[i, j]))
+                y_pred.extend([j] * int(cm[i, j]))
+
         cm_plot = wandb.plot.confusion_matrix(probs=None,
-                                              y_true=cm.argmax(axis=1),
-                                              preds=cm.argmax(axis=0),
+                                              y_true=y_true,
+                                              preds=y_pred,
                                               class_names=class_names)
 
         # Log other metrics and the confusion matrix plot
@@ -58,8 +70,7 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_devel_results(trainer):
         for L, loader in loaders.items():
-            log_metrics(trainer, loaders["devel"], log_prefix=f"{L}_")
-            TerminateOnNan()
+            log_metrics(trainer, loader, log_prefix=f"{L}_")
 
     @trainer.on(Events.ITERATION_COMPLETED)
     def clip_gradients(engine):
@@ -71,5 +82,40 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     def log_results_end(trainer):
         for L, loader in loaders.items():
             log_metrics(trainer, loader, log_prefix=f"{L}_")
+
+        logging.info("Terminating run explicitly.")
+        trainer.terminate()
+
+    return trainer
+
+
+def create_transfer_learner(model, optimizer, criterion, loaders, device):
+    """Method to create a transfer learner trainer."""
+
+    # Initialize a stack that contains all frozen layers.
+    frozen_layer_stack = []
+
+    # Initial freezing of the layers.
+    logging.info("Freezing non-FC layers for given model...")
+    for name, param in model.named_parameters():
+        if "fc" not in name:
+            param.requires_grad = False
+            frozen_layer_stack.append((name, param))
+
+    # Create trainer.
+    trainer = create_trainer(
+        model, optimizer, criterion, loaders, device
+    )
+
+    # Gradual unfreezing of layers based on epoch.
+    @trainer.on(Events.EPOCH_COMPLETED)
+    def unfreeze_layers(engine):
+        epoch = engine.state.epoch
+        if frozen_layer_stack:
+            name, param = frozen_layer_stack.pop()
+            param.requires_grad = True
+            logging.info(f"Epoch {epoch}: layer {name} is now trainable.")
+        else:
+            logging.info(f"Epoch {epoch}: all layers trainable.")
 
     return trainer

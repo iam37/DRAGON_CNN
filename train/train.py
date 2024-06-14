@@ -58,7 +58,7 @@ to what fraction is picked for train/devel/test.""",
 )
 @click.option("--cutout_size", type=int, default=94)
 @click.option("--channels", type=int, default=1)
-@click.option("--num_classes", type=int, default=6)
+@click.option("--n_classes", type=int, default=6)
 @click.option(
     "--n_workers",
     type=int,
@@ -71,10 +71,11 @@ data_preprocessing loading process.""",
     type=click.Choice(
         [
             "nll",
+            "ce",
         ],
         case_sensitive=False,
     ),
-    default="nll",
+    default="ce",
     help="""The loss function to use""",
 )
 @click.option("--batch_size", type=int, default=16)
@@ -114,6 +115,10 @@ to the cutout_size parameter""",
     model. If this is set to None, then the default dropout rate
     in the specific model is used.""",
 )
+@click.option(
+    "--force_reload/--no_force_reload",
+    default=False,
+)
 def train(**kwargs):
     """Runs the training procedure using MLFlow."""
 
@@ -128,7 +133,7 @@ def train(**kwargs):
     model_args = {
         "cutout_size": args["cutout_size"],
         "channels": args["channels"],
-        "num_classes": args["num_classes"]
+        "num_classes": args["n_classes"]
     }
 
     if "drp" in args["model_type"].split("_"):
@@ -183,7 +188,7 @@ def train(**kwargs):
             normalize=args["normalize"],
             transforms=T,
             split=k,
-            num_classes=args["num_classes"]
+            num_classes=args["n_classes"]
         )
         for k in splits
     }
@@ -193,6 +198,7 @@ def train(**kwargs):
     # Define the criterion
     loss_dict = {
         "nll": nn.NLLLoss(),
+        "ce": nn.CrossEntropyLoss(),
     }
     criterion = loss_dict[args["loss"]]
 
@@ -207,7 +213,7 @@ def train(**kwargs):
 
         # track hyperparameters and run metadata
         config={
-            "num_classes": args["num_classes"],
+            "num_classes": args["n_classes"],
             "architecture": "CNN",
             "parameters": {
                 "learning_rate": args["lr"],
