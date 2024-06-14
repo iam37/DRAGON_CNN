@@ -15,7 +15,7 @@ import kornia.augmentation as K
 
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
-from create_trainer import create_trainer
+from create_trainer import create_transfer_learner
 from utils import discover_devices, specify_dropout_rate
 
 
@@ -45,7 +45,7 @@ So this variable should be specified accordingly""",
     ),
     default="dragon",
 )
-@click.option("--model_state", type=click.Path(exists=True), default=None)
+@click.option("--model_path", type=click.Path(exists=True), required=True)
 @click.option("--data_dir", type=click.Path(exists=True), required=True)
 @click.option(
     "--split_slug",
@@ -126,7 +126,7 @@ def train(**kwargs):
     args = {k: v for k, v in kwargs.items()}
 
     # Discover devices
-    args["device"] = discover_devices()
+    args["device"] = device = discover_devices()
 
     # Create the model given model_type
     cls = model_factory(args["model_type"])
@@ -152,9 +152,12 @@ def train(**kwargs):
     if args["dropout_rate"] is not None:
         specify_dropout_rate(model, args["dropout_rate"])
 
-    # Load the model from a saved state if provided
-    if args["model_state"]:
-        model.load_state_dict(torch.load(args["model_state"]))
+    # Load the model
+    logging.info("Loading model...")
+    if device == "cpu":
+        model.load_state_dict(torch.load(args["model_path"], map_location="cpu"))
+    else:
+        model.load_state_dict(torch.load(args["model_path"]))
 
     # Define the optimizer
     optimizer = opt.SGD(
@@ -229,8 +232,8 @@ def train(**kwargs):
         args = {**args, **model_stats(model)}
         run.log(args)
 
-        # Set up trainer
-        trainer = create_trainer(
+        # Set up transfer learning specific trainer
+        trainer = create_transfer_learner(
             model, optimizer, criterion, loaders, args["device"]
         )
 
