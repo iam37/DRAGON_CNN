@@ -32,6 +32,10 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     # Function to log metrics to wandb
     def log_metrics(trainer, loader, log_prefix=""):
         logging.info(f"Logging metrics for {log_prefix}")
+
+        # Reset evaluator state before running evaluation
+        evaluator.state.metrics = {}
+
         evaluator.run(loader)
         metrics = evaluator.state.metrics
         log_dict = {f"{log_prefix}{k}": v for k, v in metrics.items() if k != "cm"}
@@ -78,5 +82,9 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     def log_results_end(trainer):
         for L, loader in loaders.items():
             log_metrics(trainer, loader, log_prefix=f"{L}_")
+
+        logging.info("Terminating run explicitly.")
+        trainer.terminate()
+
 
     return trainer

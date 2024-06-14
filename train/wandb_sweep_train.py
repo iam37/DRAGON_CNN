@@ -49,6 +49,25 @@ def initialize_and_run_agent(device, p_args):
         os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
     wandb.agent(**p_args)
 
+def free_gpu_memory():
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+def reset_model_and_optimizer(model, optimizer):
+    del model
+    del optimizer
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+def reset_wandb_env():
+    exclude = {
+        "WANDB_PROJECT",
+        "WANDB_ENTITY",
+        "WANDB_API_KEY",
+    }
+    for k, v in os.environ.items():
+        if k.startswith("WANDB_") and k not in exclude:
+            del os.environ[k]
 
 @click.command()
 @click.option("--experiment_name", type=str, default="demo")
@@ -117,10 +136,11 @@ loaded images will be normalized using the arsinh function""",
     type=click.Choice(
         [
             "nll",
+            "ce"
         ],
         case_sensitive=False,
     ),
-    default="nll",
+    default="ce",
     help="""The loss function to use""",
 )
 @click.option(
@@ -151,27 +171,6 @@ def sweep_init(**kwargs):
 
     # Create the model given model_type
     cls = model_factory(args["model_type"])
-    model_args = {
-        "cutout_size": args["cutout_size"],
-        "channels": args["channels"],
-        "num_classes": args["n_classes"]
-    }
-
-    if "drp" in args["model_type"].split("_"):
-        logging.info(
-            "Using dropout rate of {} in the model".format(
-                args["dropout_rate"]
-            )
-        )
-        model_args["dropout"] = "True"
-
-    model = cls(**model_args)
-    model = nn.DataParallel(model) if args["parallel"] else model
-    model = model.to(args["device"])
-
-    # Chnaging the default dropout rate if specified
-    if args["dropout_rate"] is not None:
-        specify_dropout_rate(model, args["dropout_rate"])
 
     # Select the desired transforms
     T = None
@@ -211,7 +210,7 @@ def sweep_init(**kwargs):
     wandb.require("service")
 
     # Initializing the Sweep
-    trainer_func = partial(train, model=model, datasets=datasets, criterion=criterion, args=args)
+    trainer_func = partial(train, model_cls=cls, datasets=datasets, criterion=criterion, args=args)
     sweep_id = wandb.sweep(sweep=sweep_config, project=args["experiment_name"])
     logging.info(f"The W&B sweep ID for this run is {sweep_id}.")
 
@@ -261,7 +260,7 @@ def sweep_init(**kwargs):
 
 
 
-def train(model, datasets, criterion, args):
+def train(model_cls, datasets, criterion, args):
     # Initializing W&B run
     with wandb.init(
         id=args["run_id"],
@@ -271,14 +270,40 @@ def train(model, datasets, criterion, args):
         config={
             "num_classes": args["n_classes"],
             "architecture": "CNN"
-        }
+        },
+        reinit=True
     ) as run:
         # Overriding run name if it is specified.
+        name_str = "_".join(
+            [f"{key}_{wandb.config[key]}" for key in wandb.config.keys()[2:]]
+        )
         if args["run_name"] is not None:
-            name_str = "_".join(
-                [f"{key}_{wandb.config[key]}" for key in wandb.config.keys()[2:]]
-            )
             run.name = args["run_name"] + "_" + name_str
+        else:
+            run.name = name_str
+
+        model_args = {
+            "cutout_size": args["cutout_size"],
+            "channels": args["channels"],
+            "num_classes": args["n_classes"]
+        }
+
+        if "drp" in args["model_type"].split("_"):
+            logging.info(
+                "Using dropout rate of {} in the model".format(
+                    args["dropout_rate"]
+                )
+            )
+            model_args["dropout"] = "True"
+
+        logging.info("Reinitializing model.")
+        model = model_cls(**model_args)
+        model = nn.DataParallel(model) if args["parallel"] else model
+        model = model.to(args["device"])
+
+        # Chnaging the default dropout rate if specified
+        if args["dropout_rate"] is not None:
+            specify_dropout_rate(model, args["dropout_rate"])
 
         optimizer = opt.SGD(
             model.parameters(),
@@ -301,6 +326,7 @@ def train(model, datasets, criterion, args):
         # Write the parameters and model stats to W&B
         args = {**args, **model_stats(model)}
         wandb.log(args)
+        wandb.watch(model)
 
         # Set up trainer
         trainer = create_trainer(
@@ -320,8 +346,12 @@ def train(model, datasets, criterion, args):
         logging.info(f"Saved model to {model_path}")
         run.log_artifact(model_path)
 
+        # Resetting model.
+        reset_model_and_optimizer(model, optimizer)
+
         # Finish the W&B run!
         wandb.finish()
+        free_gpu_memory()
 
 
 if __name__ == "__main__":
