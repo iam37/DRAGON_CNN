@@ -71,10 +71,11 @@ data_preprocessing loading process.""",
     type=click.Choice(
         [
             "nll",
+            "ce",
         ],
         case_sensitive=False,
     ),
-    default="nll",
+    default="ce",
     help="""The loss function to use""",
 )
 @click.option("--batch_size", type=int, default=16)
@@ -199,7 +200,7 @@ def train(**kwargs):
         "nll": nn.NLLLoss(),
         "ce": nn.CrossEntropyLoss(),
     }
-    criterion = loss_dict["ce"]
+    criterion = loss_dict[args["loss"]]
 
     # Log into W&B
     wandb.login()
