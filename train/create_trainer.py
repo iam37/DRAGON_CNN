@@ -85,7 +85,37 @@ def create_trainer(model, optimizer, criterion, loaders, device):
 
         logging.info("Terminating run explicitly.")
         trainer.terminate()
-        evaluator.terminate()
 
+    return trainer
+
+
+def create_transfer_learner(model, optimizer, criterion, loaders, device):
+    """Method to create a transfer learner trainer."""
+
+    # Initialize a stack that contains all frozen layers.
+    frozen_layer_stack = []
+
+    # Initial freezing of the layers.
+    logging.info("Freezing non-FC layers for given model...")
+    for name, param in model.named_parameters():
+        if "fc" not in name:
+            param.requires_grad = False
+            frozen_layer_stack.append((name, param))
+
+    # Create trainer.
+    trainer = create_trainer(
+        model, optimizer, criterion, loaders, device
+    )
+
+    # Gradual unfreezing of layers based on epoch.
+    @trainer.on(Events.EPOCH_COMPLETED)
+    def unfreeze_layers(engine):
+        epoch = engine.state.epoch
+        if frozen_layer_stack:
+            name, param = frozen_layer_stack.pop()
+            param.requires_grad = True
+            logging.info(f"Epoch {epoch}: layer {name} is now trainable.")
+        else:
+            logging.info(f"Epoch {epoch}: all layers trainable.")
 
     return trainer
