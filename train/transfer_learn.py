@@ -120,7 +120,7 @@ to the cutout_size parameter""",
     default=False,
 )
 def train(**kwargs):
-    """Runs the training procedure using MLFlow."""
+    """Runs the training procedure using W&B."""
 
     # Copy and log args
     args = {k: v for k, v in kwargs.items()}

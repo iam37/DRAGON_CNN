@@ -202,6 +202,7 @@ class DatasetCreator:
     def create_convolution(self, fits_filepath = "offset_AGN_images/"):
         if not exists(fits_filepath):
             os.makedirs(fits_filepath)
+        print(f"WRITING TO FILEPATH: {fits_filepath}")
         for ii, galaxy_img in tqdm(enumerate(self.singleton_images)):
             for j, AGN_img in enumerate(self.rotated_AGN):
                 convolved_image = self.convolve_galaxy_AGN(galaxy_img, AGN_img)
@@ -210,7 +211,8 @@ class DatasetCreator:
                 #galaxy_name = self.singleton_names[ii]
                 hdu = fits.PrimaryHDU(convolved_image)
                 hdul = fits.HDUList([hdu])
-                hdul.writeto(f"{fits_filepath}{ii}_with_AGN_{j}.fits" , overwrite=True)
+                #print(f"{fits_filepath}object{ii}_with_AGN_{j}.fits")
+                hdul.writeto(f"{fits_filepath}object{ii}_with_AGN_{j}.fits" , overwrite=True)
             """for k, single_point_source in enumerate(self.single_point_sources):
                 convolved_image = self.convolve_galaxy_AGN(galaxy_img, single_point_source)
                 single_name = self.single_point_names[k]
