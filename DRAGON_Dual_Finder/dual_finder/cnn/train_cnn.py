@@ -72,8 +72,8 @@ class DualFinder:
     """
 
     def freezeLayers(self, model, num_layers_to_freeze, num_conv_layers):
-        for layer in model.layers[1:len(model.layers)-num_layers_to_freeze]:
-        #for layer in model.layers[1:num_layers_to_freeze]:
+        #for layer in model.layers[1:len(model.layers)-2-num_layers_to_freeze]: # subtract the two fully connected layers.
+        for layer in model.layers[1:num_layers_to_freeze]:
             if isinstance(layer, layers.Conv2D):
                 layer.trainable = False
         #for layer in model.layers[-(len(model.layers) - num_layers_to_freeze):-1]:
@@ -281,8 +281,10 @@ class DualFinder:
         logging.info(f"Gradually unfreezing {num_layers_to_freeze} layers")
         histories_2 = []
         for i in range(num_layers_to_freeze, 0, -1):
-            if isinstance(transfer_model.layers[len(transfer_model.layers)-i], layers.Conv2D):
-               transfer_model.layers[len(transfer_model.layers)-i].trainable = True
+            #if isinstance(transfer_model.layers[len(transfer_model.layers)-i], layers.Conv2D):
+            if isinstance(transfer_model.layers[i], layers.Conv2D):
+               #transfer_model.layers[len(transfer_model.layers)-i].trainable = True
+               transfer_model.layers[i].trainable = True
             if save_feature_maps:
                 feature_map_output_filepath_unfreeze = "dual_finder/dual_finder/cnn/feature_maps/" + model_filepath+"_unfreeze"
                 if not exists(feature_map_output_filepath_unfreeze):
@@ -313,8 +315,6 @@ class DualFinder:
         history_3 = transfer_model.fit(new_train_data, train_labels_one_hot, batch_size = 64, validation_data = (new_val_data, val_labels_one_hot), epochs = difference, callbacks = callback_array_unfrozen, class_weight = class_weights_dict, shuffle = True, use_multiprocessing = True)
         transfer_model.save(model_filepath + "/retrained_transfer_learn_model" + str(self.epoch) + ".h5")
         np.save(model_filepath + "/saved_history_unfrozen", history_3.history)
-        if train_synth:
-            return history_synthetic, history_1, history_2, history_3, transfer_model
         return history_1, history_2, history_3, model
 
     def scoring(self, model, X, y):
