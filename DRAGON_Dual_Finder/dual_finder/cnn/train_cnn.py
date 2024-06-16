@@ -232,13 +232,9 @@ class DualFinder:
         plt.show()
 
         
-    def transferLearning(self, num_layers_to_freeze, model_filepath, newEpochs, new_train_data, new_train_labels, new_val_data, new_val_labels, newBatch, newLearningRate, dropout_rate, train_synth = True, model = None, save_feature_maps = True, newClassWeightsDict = None):
+    def transferLearning(self, num_layers_to_freeze, model_filepath, newEpochs, new_train_data, new_train_labels, new_val_data, new_val_labels, newBatch, newLearningRate, dropout_rate, model = None, save_feature_maps = False, newClassWeightsDict = None):
         print(model_filepath)
-        if train_synth:
-            logging.info("Training on Synthetic Dataset")
-            history_synthetic, pretrained_model = self.trainCNN(model_filepath = model_filepath, save_feature_maps = save_feature_maps, dropout_rate = dropout_rate)
-        else:
-            pretrained_model = model
+        pretrained_model = model
         num_fc_layers_to_freeze = 0
         transfer_model = self.freezeLayers(pretrained_model, num_layers_to_freeze, num_fc_layers_to_freeze)
         logging.info(f"INITIATE TRANSFER LEARNING: {num_layers_to_freeze} frozen")
@@ -253,7 +249,7 @@ class DualFinder:
         class_weights_dict = dict(enumerate(class_weights))
 
         transfer_model.compile(optimizer=optimized, loss=tf.keras.losses.CategoricalCrossentropy(),
-                      metrics=[tf.keras.metrics.BinaryAccuracy(name = 'binary_accuracy'), tf.keras.metrics.Recall(name = 'recall'), tf.keras.metrics.Precision(name = 'precision'), tf.keras.metrics.F1Score(name = 'f1_score')], run_eagerly = False)
+                      metrics=[tf.keras.metrics.CategoricalAccuracy(name = 'accuracy'), tf.keras.metrics.Recall(name = 'recall'), tf.keras.metrics.Precision(name = 'precision'), tf.keras.metrics.F1Score(name = 'f1_score')], run_eagerly = False)
 
         transfer_model.summary()
         cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=model_filepath +"_checkpoint_transfer_learning",save_weights_only=False,verbose=0)
