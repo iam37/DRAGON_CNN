@@ -18,7 +18,7 @@ import torch.multiprocessing as mp
 
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
-from train import create_trainer
+from train import create_trainer, create_transfer_learner
 from utils import discover_devices, specify_dropout_rate
 
 # Global Sweep Configuration. This also effects early stopping
@@ -167,6 +167,12 @@ to the cutout_size parameter""",
     "--force_reload/--no_force_reload",
     default=False,
 )
+@click.option(
+    "--train/--transfer_learn",
+    default=True,
+    help="""Specifies whether you wish to do transfer learning. If transfer learning,
+    you must specify model path in the model_state argument."""
+)
 def sweep_init(**kwargs):
     # Copy and log args
     args = {k: v for k, v in kwargs.items()}
@@ -311,6 +317,13 @@ def train(model_cls, datasets, criterion, args):
         if args["dropout_rate"] is not None:
             specify_dropout_rate(model, args["dropout_rate"])
 
+        if args["model_state"]:
+            logging.info(f'Loading model from {args["model_state"]}...')
+            if args["device"] == "cpu":
+                model.load_state_dict(torch.load(args["model_state"], map_location="cpu"))
+            else:
+                model.load_state_dict(torch.load(args["model_state"]))
+
         optimizer = opt.SGD(
             model.parameters(),
             lr=wandb.config.learning_rate,
@@ -335,9 +348,16 @@ def train(model_cls, datasets, criterion, args):
         wandb.watch(model, log_freq=1)
 
         # Set up trainer
-        trainer = create_trainer(
-            model, optimizer, criterion, loaders, args["device"]
-        )
+        if args["train"]:
+            logging.info("Creating trainer...")
+            trainer = create_trainer(
+                model, optimizer, criterion, loaders, args["device"]
+            )
+        else:
+            logging.info("Creating trainer and freezing layers for transfer learning...")
+            trainer = create_transfer_learner(
+                model, optimizer, criterion, loaders, args["device"]
+            )
 
         # Run trainer and save model state
         trainer.run(loaders["train"], max_epochs=wandb.config.epochs)

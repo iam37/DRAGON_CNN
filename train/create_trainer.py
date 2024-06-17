@@ -6,9 +6,8 @@ from ignite.engine import (
     create_supervised_evaluator,
 )
 from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix, Recall, Fbeta
-from ignite.handlers import TerminateOnNan
-import torch.nn as nn
 import logging
+
 
 def create_trainer(model, optimizer, criterion, loaders, device):
     """Set up Ignite trainer and evaluator."""
@@ -102,7 +101,7 @@ def create_transfer_learner(model, optimizer, criterion, loaders, device):
             param.requires_grad = False
             frozen_layer_stack.append((name, param))
 
-    # Create trainer.
+    # Create trainer
     trainer = create_trainer(
         model, optimizer, criterion, loaders, device
     )
@@ -111,11 +110,18 @@ def create_transfer_learner(model, optimizer, criterion, loaders, device):
     @trainer.on(Events.EPOCH_COMPLETED)
     def unfreeze_layers(engine):
         epoch = engine.state.epoch
+
+        # We unfreeze one entire layer at a time (O(1) complexity).
+        wandb.log({"frozen_layers": len(frozen_layer_stack)})
         if frozen_layer_stack:
-            name, param = frozen_layer_stack.pop()
-            param.requires_grad = True
-            logging.info(f"Epoch {epoch}: layer {name} is now trainable.")
+            top_name, top_param = frozen_layer_stack[-1]
+            layer_name = top_name.split('.')[1]
+            while frozen_layer_stack and frozen_layer_stack[-1][0].split('.')[1] == layer_name:
+                name, param = frozen_layer_stack.pop()
+                param.requires_grad = True
+                logging.info(f"Epoch[{epoch}]: layer {name} is now trainable.")
         else:
-            logging.info(f"Epoch {epoch}: all layers trainable.")
+            # All layers unfrozen already!
+            logging.info(f"Epoch[{epoch}]: all layers trainable.")
 
     return trainer
