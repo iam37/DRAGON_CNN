@@ -73,7 +73,7 @@ class DualFinder:
 
     def freezeLayers(self, model, num_layers_to_freeze, num_conv_layers):
         #for layer in model.layers[1:len(model.layers)-2-num_layers_to_freeze]: # subtract the two fully connected layers.
-        for layer in model.layers[1:num_layers_to_freeze]:
+        for layer in model.layers[2:num_layers_to_freeze]:
             if isinstance(layer, layers.Conv2D):
                 layer.trainable = False
         #for layer in model.layers[-(len(model.layers) - num_layers_to_freeze):-1]:
