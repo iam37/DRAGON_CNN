@@ -15,7 +15,7 @@ import kornia.augmentation as K
 
 from data_preprocessing import FITSDataset, get_data_loader
 from cnn import model_factory, model_stats, save_trained_model
-from create_trainer import create_trainer
+from create_trainer import create_trainer, create_transfer_learner
 from utils import discover_devices, specify_dropout_rate
 
 
@@ -119,6 +119,10 @@ to the cutout_size parameter""",
     "--force_reload/--no_force_reload",
     default=False,
 )
+@click.option(
+    "--train/--transfer_learn",
+    default=True
+)
 def train(**kwargs):
     """Runs the training procedure using MLFlow."""
 
@@ -126,7 +130,7 @@ def train(**kwargs):
     args = {k: v for k, v in kwargs.items()}
 
     # Discover devices
-    args["device"] = discover_devices()
+    args["device"] = device = discover_devices()
 
     # Create the model given model_type
     cls = model_factory(args["model_type"])
@@ -154,7 +158,11 @@ def train(**kwargs):
 
     # Load the model from a saved state if provided
     if args["model_state"]:
-        model.load_state_dict(torch.load(args["model_state"]))
+        logging.info(f'Loading model from {args["model_state"]}...')
+        if device == "cpu":
+            model.load_state_dict(torch.load(args["model_state"], map_location="cpu"))
+        else:
+            model.load_state_dict(torch.load(args["model_state"]))
 
     # Define the optimizer
     optimizer = opt.SGD(
@@ -230,9 +238,16 @@ def train(**kwargs):
         run.log(args)
 
         # Set up trainer
-        trainer = create_trainer(
-            model, optimizer, criterion, loaders, args["device"]
-        )
+        if args["train"]:
+            logging.info("Creating trainer...")
+            trainer = create_trainer(
+                model, optimizer, criterion, loaders, args["device"]
+            )
+        else:
+            logging.info("Creating trainer and freezing layers for transfer learning...")
+            trainer = create_transfer_learner(
+                model, optimizer, criterion, loaders, args["device"]
+            )
 
         # Run trainer and save model state
         trainer.run(loaders["train"], max_epochs=args["epochs"])
