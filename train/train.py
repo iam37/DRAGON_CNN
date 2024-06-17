@@ -121,7 +121,9 @@ to the cutout_size parameter""",
 )
 @click.option(
     "--train/--transfer_learn",
-    default=True
+    default=True,
+    help="""Specifies whether you wish to do transfer learning. If transfer learning,
+    you must specify model path in the model_state argument."""
 )
 def train(**kwargs):
     """Runs the training procedure using MLFlow."""
@@ -130,7 +132,7 @@ def train(**kwargs):
     args = {k: v for k, v in kwargs.items()}
 
     # Discover devices
-    args["device"] = device = discover_devices()
+    args["device"] = discover_devices()
 
     # Create the model given model_type
     cls = model_factory(args["model_type"])
@@ -159,7 +161,7 @@ def train(**kwargs):
     # Load the model from a saved state if provided
     if args["model_state"]:
         logging.info(f'Loading model from {args["model_state"]}...')
-        if device == "cpu":
+        if args["device"] == "cpu":
             model.load_state_dict(torch.load(args["model_state"], map_location="cpu"))
         else:
             model.load_state_dict(torch.load(args["model_state"]))
