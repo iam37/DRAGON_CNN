@@ -96,7 +96,3 @@ class DRAGON(nn.Module):
         out = self.fc2(out)
 
         return out
-<<<<<<< HEAD
-=======
-
->>>>>>> 0f7fcb356bfdff9b41633796ec1dec06a18691c9
