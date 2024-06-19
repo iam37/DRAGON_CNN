@@ -60,7 +60,7 @@ def load_images(filepath, label, crop_center_fn, augment_fn, num_augmented_image
                 if not augment_fn:
                     labels.append(label)
         except OSError:
-            print(f"{image_file} is corrupted or empty, moving on...")
+            print(f"{OSError} has occured with image: {image_file}, skipping image...")
             continue
     images = np.asarray(images)
     if augment_fn and num_augmented_images:
