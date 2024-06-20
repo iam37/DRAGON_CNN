@@ -33,7 +33,8 @@ sweep_config = {
         "weight_decay": {"values": [1e-1, 1e-2, 1e-3]},
         "epochs": {"values": [10, 15, 20]},
         "batch_size": {"values": [16, 32, 64]},
-        "dropout_rate": {"values": [0, 0.5]}
+        "dropout_rate": {"values": [0, 0.5]},
+        "scheduler": {"values": [True, False]}
     },
     "early_terminate": {
         "type": "hyperband",
@@ -351,12 +352,12 @@ def train(model_cls, datasets, criterion, args):
         if args["train"]:
             logging.info("Creating trainer...")
             trainer = create_trainer(
-                model, optimizer, criterion, loaders, args["device"]
+                model, optimizer, criterion, loaders, args["device"], wandb.config.scheduler
             )
         else:
             logging.info("Creating trainer and freezing layers for transfer learning...")
             trainer = create_transfer_learner(
-                model, optimizer, criterion, loaders, args["device"]
+                model, optimizer, criterion, loaders, args["device"], wandb.config.scheduler
             )
 
         # Run trainer and save model state

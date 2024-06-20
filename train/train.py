@@ -120,10 +120,21 @@ to the cutout_size parameter""",
     default=False,
 )
 @click.option(
+    "--expand_data",
+    type=int,
+    default=1,
+    help="""This controls the factor by which the training
+data is augmented""",
+)
+@click.option(
     "--train/--transfer_learn",
     default=True,
     help="""Specifies whether you wish to do transfer learning. If transfer learning,
     you must specify model path in the model_state argument."""
+)
+@click.option(
+    "--scheduler/--no_scheduler",
+    default=True
 )
 def train(**kwargs):
     """Runs the training procedure using MLFlow."""
@@ -185,7 +196,10 @@ def train(**kwargs):
     # Select the desired transforms
     T = None
     if args["crop"]:
-        T = K.CenterCrop(args["cutout_size"])
+        T = [K.CenterCrop(args["cutout_size"]),
+            K.RandomHorizontalFlip(),
+            K.RandomVerticalFlip(),
+            K.RandomRotation(360)]
 
     # Generate the DataLoaders and log the train/devel/test split sizes
     splits = ("train", "devel", "test")
@@ -198,7 +212,8 @@ def train(**kwargs):
             normalize=args["normalize"],
             transforms=T,
             split=k,
-            num_classes=args["n_classes"]
+            num_classes=args["n_classes"],
+            expand_factor=args["expand_data"] if k == "train" else 1,
         )
         for k in splits
     }
@@ -243,12 +258,12 @@ def train(**kwargs):
         if args["train"]:
             logging.info("Creating trainer...")
             trainer = create_trainer(
-                model, optimizer, criterion, loaders, args["device"]
+                model, optimizer, criterion, loaders, args["device"], args["scheduler"]
             )
         else:
             logging.info("Creating trainer and freezing layers for transfer learning...")
             trainer = create_transfer_learner(
-                model, optimizer, criterion, loaders, args["device"]
+                model, optimizer, criterion, loaders, args["device"], args["scheduler"]
             )
 
         # Run trainer and save model state
