@@ -6,14 +6,20 @@ from ignite.engine import (
     create_supervised_evaluator,
 )
 from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix, Recall, Fbeta
+from ignite.contrib.handlers.param_scheduler import LRScheduler
 import logging
 
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
-def create_trainer(model, optimizer, criterion, loaders, device):
+def create_trainer(model, optimizer, criterion, loaders, device, use_scheduler=True):
     """Set up Ignite trainer and evaluator."""
     trainer = create_supervised_trainer(
         model, optimizer, criterion, device=device
     )
+
+    if use_scheduler:
+        torch_lr_scheduler = CosineAnnealingLR(optimizer, T_max=20)
+        scheduler = LRScheduler(torch_lr_scheduler)
 
     metrics = {
         "accuracy": Accuracy(),
@@ -59,7 +65,13 @@ def create_trainer(model, optimizer, criterion, loaders, device):
         log_dict[f"{log_prefix}confusion_matrix"] = cm_plot
         wandb.log(log_dict)
 
+    def get_current_lr(optimizer):
+        return optimizer.param_groups[0]['lr']
+
     # Define training hooks
+    if use_scheduler:
+        trainer.add_event_handler(Events.ITERATION_STARTED, scheduler)
+
     @trainer.on(Events.STARTED)
     def log_results_start(trainer):
         logging.info("Log results started.")
@@ -70,6 +82,7 @@ def create_trainer(model, optimizer, criterion, loaders, device):
     def log_devel_results(trainer):
         for L, loader in loaders.items():
             log_metrics(trainer, loader, log_prefix=f"{L}_")
+        wandb.log({"lr": get_current_lr(optimizer)})
 
     @trainer.on(Events.ITERATION_COMPLETED)
     def clip_gradients(engine):
