@@ -41,7 +41,8 @@ class FITSDataset(Dataset):
         load_labels=True,
         num_classes=None,
         force_reload=False,
-        n_workers=1
+        n_workers=1,
+        expand_factor=1
     ):
         # Set data_preprocessing directories
         self.data_dir = Path(data_dir)  # As long as you keep the label csv in one spot with all nested directories
@@ -60,6 +61,7 @@ class FITSDataset(Dataset):
         # Set requested transforms
         self.normalize = normalize
         self.transform = transforms
+        self.expand_factor = expand_factor
 
         # Define paths
         self.data_info = load_data_dir(self.data_dir, slug, split)
@@ -136,7 +138,7 @@ class FITSDataset(Dataset):
             # Transform the tensor if a transformation is specified.
             if self.transform is not None:
                 if hasattr(self.transform, "__len__"):  # If inputted in a list of transforms
-                    for transform in self.transform(pt):
+                    for transform in self.transform:
                         pt = transform(pt)
                 else:  # If inputted a single transform.
                     pt = self.transform(pt)
@@ -151,7 +153,7 @@ class FITSDataset(Dataset):
 
     def __len__(self):
         """Return the effective length of the dataset."""
-        return len(self.labels)
+        return len(self.labels) * self.expand_factor
 
     def get_sampler(self):
         """Return the sampler for DistributedSampler"""
