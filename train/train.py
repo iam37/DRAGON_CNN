@@ -19,6 +19,9 @@ from create_trainer import create_trainer, create_transfer_learner
 from utils import discover_devices, specify_dropout_rate
 
 
+import random
+import numpy as np
+
 @click.command()
 @click.option("--experiment_name", type=str, default="demo")
 @click.option(
@@ -91,7 +94,7 @@ to use multiple GPUs when they are available""",
 )
 @click.option(
     "--normalize/--no-normalize",
-    default=False,
+    default=True,
     help="""The normalize argument controls whether or not, the
 loaded images will be normalized using the arsinh function""",
 )
@@ -217,7 +220,7 @@ def train(**kwargs):
         )
         for k in splits
     }
-    loaders = {k: loader_factory(v) for k, v in datasets.items()}
+    loaders = {k: loader_factory(v, shuffle=(k == 'train')) for k, v in datasets.items()}
     args["splits"] = {k: len(v.dataset) for k, v in loaders.items()}
 
     # Define the criterion

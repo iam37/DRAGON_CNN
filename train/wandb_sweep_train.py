@@ -33,7 +33,7 @@ sweep_config = {
         "weight_decay": {"values": [1e-1, 1e-2, 1e-3]},
         "epochs": {"values": [10, 15, 20]},
         "batch_size": {"values": [16, 32, 64]},
-        "dropout_rate": {"values": [0, 0.5]},
+        "dropout_rate": {"values": [0, 0.2, 0.3, 0.4, 0.5]},
         "scheduler": {"values": [True, False]}
     },
     "early_terminate": {
@@ -44,6 +44,8 @@ sweep_config = {
     }
 }
 
+import random
+import numpy as np
 
 def initialize_and_run_agent(device, p_args):
     if device is not None:
@@ -157,14 +159,6 @@ operation before being fed into the network. Images are cropped
 to the cutout_size parameter""",
 )
 @click.option(
-    "--dropout_rate",
-    type=float,
-    default=None,
-    help="""The dropout rate to use for all the layers in the
-    model. If this is set to None, then the default dropout rate
-    in the specific model is used.""",
-)
-@click.option(
     "--force_reload/--no_force_reload",
     default=False,
 )
@@ -249,11 +243,11 @@ def sweep_init(**kwargs):
             p.join()  # Thread join to wait for each to finish execution.
 
     elif args["device"] == "cuda" and args["parallel"]:  # Multiplexing using GPUs.
-        num_agents = torch.cuda.device_count()
+        num_agents = 1 # torch.cuda.device_count()
         logging.info(f"Parallelizing sweeps over {num_agents} agents.")
 
         for i in range(num_agents):
-            p = mp.Process(target=initialize_and_run_agent, args=(i, p_args))
+            p = mp.Process(target=initialize_and_run_agent, args=(0, p_args))
             p.start()  # Start the new child process
             processes.append(p)
 
@@ -301,22 +295,13 @@ def train(model_cls, datasets, criterion, args):
             "num_classes": args["n_classes"]
         }
 
-        if "drp" in args["model_type"].split("_"):
-            logging.info(
-                "Using dropout rate of {} in the model".format(
-                    args["dropout_rate"]
-                )
-            )
-            model_args["dropout"] = "True"
-
         logging.info("Reinitializing model.")
         model = model_cls(**model_args)
         model = nn.DataParallel(model) if args["parallel"] else model
         model = model.to(args["device"])
 
         # Chnaging the default dropout rate if specified
-        if args["dropout_rate"] is not None:
-            specify_dropout_rate(model, args["dropout_rate"])
+        specify_dropout_rate(model, wandb.config.dropout_rate)
 
         if args["model_state"]:
             logging.info(f'Loading model from {args["model_state"]}...')
