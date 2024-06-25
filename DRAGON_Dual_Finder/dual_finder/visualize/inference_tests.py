@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import pandas as pd
 from astropy.io import fits
 from astropy.stats import SigmaClip
 from astropy.table import Table
@@ -20,6 +21,7 @@ import lmfit
 import logging
 import time
 import sep
+import csv
 
 from photutils.datasets import make_noise_image
 import os
@@ -289,45 +291,69 @@ class testResults:
         self.doubles = []
         self.double_names = []
         self.current_wd = data_dir
-    def test(self, trained_model, filepath = "real_hsc_test_images_expanded/binary_candidates/", fits_filepath = "real_hsc_test_images_expanded/binary_candidates/binary_fits_files", tang_png_filepath ="real_hsc_test_images_expanded/binary_candidates/tang_png_files/"):
+    def test(self, trained_model, filepath = None, fits_filepath = None, tang_png_filepath = None):
+        filepath = f"{self.current_wd}binary_candidates/"
+        fits_filepath = f"{self.current_wd}binary_candidates/binary_fits_files"
+        tang_png_filepath = f"{self.current_wd}binary_candidates/tang_png_files/"
+        """if isinstance(filepath, type(None)):
+            filepath = f"{self.current_wd}binary_candidates/"
+        elif isinstance(fits_filepath, type(None)):
+            fits_filepath = f"{self.current_wd}binary_candidates/binary_fits_files"
+        elif isinstance(tang_png_filepath, type(None)):
+            tang_png_filepath = f"{self.current_wd}binary_candidates/tang_png_files/"
+            """
         predictions = trained_model.predict(self.dataset, verbose = 1)
-        label_names = ["double AGN", "single AGN"]
+        label_names = ["empty_sky", "single_AGN", "dual_AGN", "merger"]
         self.test_results = []
         num_doubles = 0
         num_singles = 0
-        for i, prediction in tqdm(enumerate(predictions)):
-            max_confidence = np.max(prediction)
-            predicted_class = np.argmax(prediction)
-            label = label_names[predicted_class]
-            result = {'label': label, 'confidence': max_confidence}
-            self.test_results.append(result)
-            if label == "double AGN" and (self.image_names[i] != "QSO_220521_34_000009_6.fits" or self.image_names[i] != "QSO_220556_48_050507_1.fits" or
-                                         self.image_names[i] != "QSO_220710_58_003840_1.fits" or self.image_names[i] != "QSO_221137_15_053921_9.fits" or self.image_names[i] != "QSO_221430_65_035432_0.fits"):
-                plt.figure()
-                self.doubles.append(self.dataset[i])
-                #plt.imshow(self.dataset[i], cmap = "gray_r", norm = mpl.colors.LogNorm())
-                plt.imshow(self.dataset[i], cmap = "gray_r", vmin = np.percentile(self.dataset[i], 1), vmax = np.percentile(self.dataset[i], 99))
-                plt.title(f"Predicted Label: {label}, Confidence: {max_confidence:.4f}")
-                plt.xlabel(self.image_names[i][:-4])
-                self.double_names.append(self.image_names[i])
-
-                if not exists(filepath + self.image_names[i]):
-                    os.makedirs(filepath + self.image_names[i])
-                if not exists(fits_filepath):
-                    os.makedirs(fits_filepath)
-                if not exists(tang_png_filepath):
-                    os.makedirs(tang_png_filepath)
-                shutil.copy(self.image_names[i], filepath + self.image_names[i])
-                shutil.copy(self.image_names[i], fits_filepath)
-                plt.savefig(filepath + self.image_names[i][:-4] + "_.png")
-                plt.show()
-                shutil.copy(filepath+self.image_names[i][:-4]+"_.png", tang_png_filepath)
-                #plt.axis('off')
-                num_doubles+=1
-            else:
-                num_singles+=1
-                #plt.close()
-        plt.close()
+        header = ["object_ID", "label", "confidence"]
+        with open(f"{self.current_wd}inf.csv", 'w', encoding='UTF8') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            for i, prediction in tqdm(enumerate(predictions)):
+                max_confidence = np.max(prediction)
+                predicted_class = np.argmax(prediction)
+                label = label_names[predicted_class]
+                result = {'label': label, 'confidence': max_confidence}
+                self.test_results.append(result)
+                writer.writerow([self.image_names[i], label, max_confidence])
+                #if label == "double AGN" and (self.image_names[i] != "QSO_220521_34_000009_6.fits" or self.image_names[i] != "QSO_220556_48_050507_1.fits" orself.image_names[i] != "QSO_220710_58_003840_1.fits" or self.image_names[i] != "QSO_221137_15_053921_9.fits" or self.image_names[i] != "QSO_221430_65_035432_0.fits"):
+                if label == 'dual_AGN' or label == 'merger':
+                    plt.figure()
+                    self.doubles.append(self.dataset[i])
+                    #plt.imshow(self.dataset[i], cmap = "gray_r", norm = mpl.colors.LogNorm())
+                    plt.imshow(self.dataset[i], cmap = "gray_r", vmin = np.percentile(self.dataset[i], 1), vmax = np.percentile(self.dataset[i], 99))
+                    plt.title(f"Predicted Label: {label}, Confidence: {max_confidence:.4f}")
+                    plt.xlabel(self.image_names[i][:-4])
+                    self.double_names.append(self.image_names[i])
+    
+                    if not exists(filepath + self.image_names[i]):
+                        os.makedirs(filepath + self.image_names[i])
+                    if not exists(fits_filepath):
+                        os.makedirs(fits_filepath)
+                    if not exists(tang_png_filepath):
+                        os.makedirs(tang_png_filepath)
+                    shutil.copy(self.image_names[i], filepath + self.image_names[i])
+                    shutil.copy(self.image_names[i], fits_filepath)
+                    plt.savefig(filepath + self.image_names[i][:-4] + "_.png")
+                    #plt.show()
+                    shutil.copy(filepath+self.image_names[i][:-4]+"_.png", tang_png_filepath)
+                    #plt.axis('off')
+                    plt.close()
+                    num_doubles+=1
+                else:
+                    num_singles+=1
+                    #plt.close()
+            plt.close()
+        df = pd.read_csv(f"{self.current_wd}inf.csv")
+        CANDIDATES = set(["220906_91", "221115_06", "222057_44", "220718_43", "220811_56"])
+        for _, row in df.iterrows():
+            filename = row["object_ID"]
+            for candidate in CANDIDATES:
+                if candidate in filename:
+                    print(row)
+                    
         print("Number of double AGN: ", num_doubles)
         print("Number of single AGN: ", num_singles)
         return self.test_results
@@ -357,12 +383,12 @@ class testResults:
         tang_confidences = []
         for ind, k in enumerate(selected_tang_binaries):
             tang_confidences.append(k['Confidence'])
-            if not exists("real_hsc_test_images_expanded/binary_candidates/tang_png_images/"):
-                os.makedirs(f"{self.current_wd}/binary_candidates/tang_png_images/")
-            if not exists(f"{self.current_wd}/binary_candidates/tang_png_images/png_plots"):
-                os.makedirs("f{self.current_wd}/binary_candidates/tang_png_images/png_plots")
-            shutil.copy(tang_quasar_names[ind], "f{self.current_wd}/binary_candidates/tang_png_images/")
-            shutil.copy(f"{self.current_wd}/binary_candidates/" + tang_quasar_names[ind] + "_.png", f"{self.current_wd}/binary_candidates/tang_png_images/")
+            if not exists(f"{self.current_wd}binary_candidates/tang_png_images/"):
+                os.makedirs(f"{self.current_wd}binary_candidates/tang_png_images/")
+            if not exists(f"{self.current_wd}binary_candidates/tang_png_images/png_plots"):
+                os.makedirs(f"{self.current_wd}binary_candidates/tang_png_images/png_plots")
+            shutil.copy(tang_quasar_names[ind], "f{self.current_wd}binary_candidates/tang_png_images/")
+            shutil.copy(f"{self.current_wd}binary_candidates/" + tang_quasar_names[ind] + "_.png", f"{self.current_wd}binary_candidates/tang_png_images/")
         confidences = np.asarray(confidences)
         tang_confidences = np.asarray(tang_confidences)
         n, bins, patches = plt.hist(confidences, bins = np.arange(0.0, 1.1, 0.05), histtype = 'step', stacked = True, label = "All 2426 images")
@@ -394,12 +420,12 @@ class testResults:
     def find_distances(self):
         np_doubles = np.asarray(self.doubles)
         np_quasars = np.asarray(self.quasars)
-        tang_quasar_names = [f"{self.current_wd}/UNK_220718_43_001723_1.fits", f"{self.current_wd}/QSO_220811_56_023830_1.fits", f"{self.current_wd}/UNK_220906_91_004543_9.fits", f"{self.current_wd}/UNK_221115_06_000030_9.fits", f"{self.current_wd}/QSO_221227_74_005140_7.fits"]
+        tang_quasar_names = [f"{self.current_wd}UNK_220718_43_001723_1.fits", f"{self.current_wd}QSO_220811_56_023830_1.fits", f"{self.current_wd}UNK_220906_91_004543_9.fits", f"{self.current_wd}UNK_221115_06_000030_9.fits", f"{self.current_wd}QSO_221227_74_005140_7.fits"]
         #mask = np.array([quasar_dict.get("Quasar name") in tang_quasar_names for quasar_dict in np_quasars])
         tang_indices = np.where(np.isin(self.double_names, tang_quasar_names))[0]
         #selected_indices = np.where(mask)[0]
-        contour_destination_filepath = f"{self.current_wd}/binary_candidates/contour_plots/"
-        psf_destination_filepath = f"{self.current_wd}/binary_candidates/psf_plots/"
+        contour_destination_filepath = f"{self.current_wd}binary_candidates/contour_plots/"
+        psf_destination_filepath = f"{self.current_wd}binary_candidates/psf_plots/"
         if not exists(contour_destination_filepath):
             os.makedirs(contour_destination_filepath)
         if not exists(psf_destination_filepath):
@@ -507,7 +533,7 @@ class testResults:
         plt.title("Physical Separations of Dual AGN Candidates")
         plt.grid()
         plt.legend(loc = 'best')
-        plt.savefig(f"{self.current_wd}/binary_candidates/physical_distances.png")
+        plt.savefig(f"{self.current_wd}binary_candidates/physical_distances.png")
         plt.show()
 
     def quasar_photometry(self, image, center_coords, secondary_coords, quasar_fit_radii, flux_mag_0):

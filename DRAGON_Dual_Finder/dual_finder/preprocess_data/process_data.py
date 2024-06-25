@@ -69,7 +69,7 @@ def load_images(filepath, label, crop_center_fn, augment_fn, num_augmented_image
     labels = np.asarray(labels)
     print(f"Loaded {len(images)} images with {len(labels)} labels from {filepath}")
     return images, labels, image_names
-def create_dataset(empty_sky_filepath = None, single_image_filepath = None, dual_image_filepath = None, offset_image_filepath = None, stellar_filepath = None, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
+def create_dataset(empty_sky_filepath = None, single_image_filepath = None, dual_image_filepath = None, offset_image_filepath = None, stellar_filepath = None, merger_filepath = None, train = 0.65, val = 0.2, test = 0.15): #Remember to change original code to account for this change!
     all_images = []
     all_labels = []
     all_filepaths = []
@@ -79,7 +79,7 @@ def create_dataset(empty_sky_filepath = None, single_image_filepath = None, dual
         all_labels.append(empty_sky_labels)
         all_filepaths.append(empty_sky_names)
     if single_image_filepath:
-        single_images, single_labels, single_image_names = load_images(single_image_filepath, "single_AGN", crop_center, augment_dataset, 5)
+        single_images, single_labels, single_image_names = load_images(single_image_filepath, "single_AGN", crop_center, augment_dataset, 10)
         print(f"Length of single AGN images: {len(single_images)}")
         all_images.append(single_images)
         all_labels.append(single_labels)
@@ -108,6 +108,12 @@ def create_dataset(empty_sky_filepath = None, single_image_filepath = None, dual
         all_images.append(stellar_images)
         all_labels.append(stellar_labels)
         all_filepaths.append(stellar_image_names)
+    if merger_filepath:
+        merger_images, merger_labels, merger_image_names = load_images(merger_filepath, "merger", crop_center, augment_dataset, 4)
+        print(f"Length of merger imagesL: {merger_images.shape}")
+        all_images.append(merger_images)
+        all_labels.append(merger_labels)
+        all_filepaths.append(merger_image_names)
     
     total_images = np.concatenate(all_images, axis = 0)
     #print(np.shape(all_labels))
