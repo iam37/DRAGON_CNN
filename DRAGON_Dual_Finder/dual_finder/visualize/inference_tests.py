@@ -307,6 +307,8 @@ class testResults:
         self.test_results = []
         num_doubles = 0
         num_singles = 0
+        num_mergers = 0
+        num_empty_space = 0
         header = ["object_ID", "label", "confidence"]
         with open(f"{self.current_wd}inf.csv", 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
@@ -337,11 +339,17 @@ class testResults:
                     shutil.copy(self.image_names[i], filepath + self.image_names[i])
                     shutil.copy(self.image_names[i], fits_filepath)
                     plt.savefig(filepath + self.image_names[i][:-4] + "_.png")
-                    #plt.show()
+                    plt.show()
                     shutil.copy(filepath+self.image_names[i][:-4]+"_.png", tang_png_filepath)
                     #plt.axis('off')
                     plt.close()
+                    #num_doubles+=1
+                if label == 'dual_AGN':
                     num_doubles+=1
+                elif label == 'merger':
+                    num_mergers+=1
+                elif label == 'empty_space':
+                    num_empty_space+=1
                 else:
                     num_singles+=1
                     #plt.close()
@@ -354,8 +362,10 @@ class testResults:
                 if candidate in filename:
                     print(row)
                     
-        print("Number of double AGN: ", num_doubles)
+        print("Number of dual AGN: ", num_doubles)
         print("Number of single AGN: ", num_singles)
+        print("Number of megers: ", num_mergers)
+        print("Number of empty space: ", num_empty_space)
         return self.test_results
 
     def return_over_80_conf(self): #returns predictions that the model made with >80% confidence 
