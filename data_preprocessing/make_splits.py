@@ -2,11 +2,10 @@
 import click
 import logging
 from pathlib import Path
-import math
+import numpy as np
 from itertools import chain, zip_longest
-
 import pandas as pd
-
+from sklearn.utils import resample
 
 split_types = dict(
     xs=dict(train=0.027, devel=0.003, test=0.970),
@@ -23,16 +22,31 @@ def interleave(L):
     return [x for x in chain(*zip_longest(*L)) if x is not None]
 
 
-def make_splits(x, weights, split_col=None):
-    if split_col is not None:  # balanced splits
-        splits_list = list(x[split_col].unique())
-        by_split = {s: list(x[x[split_col] == s].index) for s in splits_list}
-        x = x.iloc[interleave(by_split.values())]
+def balance_dataset(df, label_col):
+    """Balance the dataset by oversampling the underrepresented classes."""
+    classes = df[label_col].unique()
+    max_count = df[label_col].value_counts().max()
+
+    balanced_df = pd.DataFrame()
+    for cls in classes:
+        cls_samples = df[df[label_col] == cls]
+        balanced_cls_samples = resample(cls_samples, replace=True, n_samples=max_count, random_state=0)
+        balanced_df = pd.concat([balanced_df, balanced_cls_samples])
+
+    return balanced_df.sample(frac=1).reset_index(drop=True)
+
+
+def make_splits(x, weights, label_col):
+    balanced_df = balance_dataset(x, label_col)
+    total_size = len(balanced_df)
+    indices = np.arange(total_size)
+    np.random.shuffle(indices)
+
     splits = dict()
     prev_index = 0
     for k, v in weights.items():
-        next_index = prev_index + math.ceil((len(x) * v))
-        splits[k] = x[prev_index:next_index]
+        next_index = prev_index + int(total_size * v)
+        splits[k] = balanced_df.iloc[indices[prev_index:next_index]]
         prev_index = next_index
     return splits
 
@@ -40,32 +54,21 @@ def make_splits(x, weights, split_col=None):
 @click.command()
 @click.option("--data_dir", type=click.Path(exists=True), required=True)
 @click.option("--target_metric", type=str, default="classes")
-def main(data_dir, target_metric):
+@click.option("--info_name", type=str, default="info.csv")
+def main(data_dir, target_metric, info_name):
     """Generate train/devel/test splits from the dataset provided."""
-
-    # Make the splits directory
     data_dir = Path(data_dir)
     splits_dir = data_dir / "splits"
     splits_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read and shuffle the catalog for the full dataset
-    df = pd.read_csv(data_dir / "info.csv")
+    df = pd.read_csv(data_dir / info_name)
     df = df.sample(frac=1, random_state=0)
 
-    for balance in [False, True]:
-        # Balance if needed
-        col = None
-        if balance:
-            col = "balance"
-            # TODO: double check if this is right.
-            df["balance"] = pd.cut(df[target_metric].index, 4)
-
-        # Generate splits and write to disk
-        for split_type in split_types.keys():
-            splits = make_splits(df, split_types[split_type], split_col=col)
-            split_slug = f"{'un' if not balance else ''}balanced-{split_type}"
-            for k, v in splits.items():
-                v.to_csv(splits_dir / f"{split_slug}-{k}.csv", index=False)
+    for split_type in split_types.keys():
+        splits = make_splits(df, split_types[split_type], label_col=target_metric)
+        split_slug = f"balanced-{split_type}"
+        for k, v in splits.items():
+            v.to_csv(splits_dir / f"{split_slug}-{k}.csv", index=False)
 
 
 if __name__ == "__main__":
