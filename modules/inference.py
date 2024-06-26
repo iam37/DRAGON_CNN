@@ -15,8 +15,7 @@ from utils import (
     discover_devices,
     enable_dropout,
     specify_dropout_rate,
-    load_data_dir,
-    pad_collate_fn
+    load_data_dir
 )
 
 
@@ -98,9 +97,9 @@ def predict(
     yh = torch.cat(yh)
 
     # Get the predicted class indices
-    _, predicted_labels = torch.max(yh, 1)
+    predicted_confs, predicted_labels = torch.max(yh, 1)
 
-    return predicted_labels.cpu().numpy()
+    return predicted_labels.cpu().numpy(), predicted_confs.cpu().numpy()
 
 
 @click.command()
@@ -261,7 +260,7 @@ def main(
         logging.info(f"Running inference run {run_num}")
 
         # Make predictions
-        preds = predict(
+        preds, cis = predict(
             model_path,
             dataset,
             cutout_size,
@@ -278,6 +277,7 @@ def main(
         # Write a CSV of predictions
         catalog = load_data_dir(data_dir, slug, split)
         catalog["predicted_labels"] = preds
+        catalog["predicted_confidence"] = cis  # Writing probabilities.
 
         cat_path = output_path + f"inf_{run_num}.csv"
         logging.info(f"Catalog saved to {cat_path}")
