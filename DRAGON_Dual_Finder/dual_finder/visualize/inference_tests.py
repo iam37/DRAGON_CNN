@@ -8,6 +8,7 @@ from astropy.table import Table
 import astropy.units as u
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord, Angle
+import astropy
 
 from astropy.utils.data import get_pkg_data_filename
 from astropy.cosmology import WMAP9 as cosmo
@@ -43,6 +44,8 @@ import shutil
 import keras
 from tensorflow.keras import  models
 from tensorflow.keras.callbacks import EarlyStopping
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def bubbleSort(array):
     for i in range(len(array)):
@@ -63,6 +66,9 @@ def crop_center(img, cropx, cropy):
     starty = y // 2 - (cropy // 2) 
     #print(starty)
     return img[starty:starty + cropy, startx:startx + cropx, ...]
+def ADUsToInstMag(flux, fluxMag_0): #takes flux data determined in DS9 and outputs the apparent magnitude of the quasar in that band
+    instMag = 2.5*np.log10(fluxMag_0/flux)
+    return instMag
 def dualAGN_3DPSFFit(QSO, quasar_name, radius):
     startTime = time.time()
     #print(np.shape(QSO))
@@ -78,7 +84,7 @@ def dualAGN_3DPSFFit(QSO, quasar_name, radius):
     QSO = QSO.byteswap(inplace = True).newbyteorder()
     bkgd = sep.Background(QSO)
     QSO = QSO - bkgd
-    Sources_Source_Extract = sep.extract(QSO, 1.5, err = bkgd.globalrms)
+    Sources_Source_Extract = sep.extract(QSO, np.median(QSO), err = bkgd.globalrms)
     numSources = len(Sources_Source_Extract)
     logging.info("Number of sources detected using SOURCE_EXTRACT: " + str(numSources))
     
@@ -303,12 +309,15 @@ class testResults:
             tang_png_filepath = f"{self.current_wd}binary_candidates/tang_png_files/"
             """
         predictions = trained_model.predict(self.dataset, verbose = 1)
-        label_names = ["empty_sky", "single_AGN", "dual_AGN", "merger"]
+        #label_names = ["empty_sky", "rubbish", "single_AGN", "offset_AGN", "dual_AGN", "merger"]
+        #label_names = ['empty_sky', 'single_AGN', 'dual_AGN', "merger"]
+        label_names = ["empty_sky", "rubbish", "single_AGN", "offset_AGN", "dual_AGN", "merger"]
         self.test_results = []
         num_doubles = 0
         num_singles = 0
         num_mergers = 0
         num_empty_space = 0
+        self.dual_names = []
         header = ["object_ID", "label", "confidence"]
         with open(f"{self.current_wd}inf.csv", 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
@@ -317,13 +326,14 @@ class testResults:
                 max_confidence = np.max(prediction)
                 predicted_class = np.argmax(prediction)
                 label = label_names[predicted_class]
-                result = {'label': label, 'confidence': max_confidence}
+                result = {'Object_ID:': self.image_names[i], 'label': label, 'confidence': max_confidence}
                 self.test_results.append(result)
                 writer.writerow([self.image_names[i], label, max_confidence])
                 #if label == "double AGN" and (self.image_names[i] != "QSO_220521_34_000009_6.fits" or self.image_names[i] != "QSO_220556_48_050507_1.fits" orself.image_names[i] != "QSO_220710_58_003840_1.fits" or self.image_names[i] != "QSO_221137_15_053921_9.fits" or self.image_names[i] != "QSO_221430_65_035432_0.fits"):
                 if label == 'dual_AGN' or label == 'merger':
                     plt.figure()
                     self.doubles.append(self.dataset[i])
+                    self.dual_names.append(self.image_names[i])
                     #plt.imshow(self.dataset[i], cmap = "gray_r", norm = mpl.colors.LogNorm())
                     plt.imshow(self.dataset[i], cmap = "gray_r", vmin = np.percentile(self.dataset[i], 1), vmax = np.percentile(self.dataset[i], 99))
                     plt.title(f"Predicted Label: {label}, Confidence: {max_confidence:.4f}")
@@ -397,8 +407,6 @@ class testResults:
                 os.makedirs(f"{self.current_wd}binary_candidates/tang_png_images/")
             if not exists(f"{self.current_wd}binary_candidates/tang_png_images/png_plots"):
                 os.makedirs(f"{self.current_wd}binary_candidates/tang_png_images/png_plots")
-            shutil.copy(tang_quasar_names[ind], "f{self.current_wd}binary_candidates/tang_png_images/")
-            shutil.copy(f"{self.current_wd}binary_candidates/" + tang_quasar_names[ind] + "_.png", f"{self.current_wd}binary_candidates/tang_png_images/")
         confidences = np.asarray(confidences)
         tang_confidences = np.asarray(tang_confidences)
         n, bins, patches = plt.hist(confidences, bins = np.arange(0.0, 1.1, 0.05), histtype = 'step', stacked = True, label = "All 2426 images")
@@ -411,7 +419,7 @@ class testResults:
         plt.ylabel("Number of Quasars")
         plt.yscale('log')
         plt.legend(loc = 'upper left')
-        plt.savefig("f{self.current_wd}/binary_candidates/conf_histogram.png")
+        plt.savefig(f"{self.current_wd}/binary_candidates/conf_histogram.png")
         plt.show()
 
 
@@ -429,136 +437,207 @@ class testResults:
 
     def find_distances(self):
         np_doubles = np.asarray(self.doubles)
+        np_doubles = np.squeeze(np_doubles, axis = -1)
+        print(np.shape(np_doubles))
         np_quasars = np.asarray(self.quasars)
         tang_quasar_names = [f"{self.current_wd}UNK_220718_43_001723_1.fits", f"{self.current_wd}QSO_220811_56_023830_1.fits", f"{self.current_wd}UNK_220906_91_004543_9.fits", f"{self.current_wd}UNK_221115_06_000030_9.fits", f"{self.current_wd}QSO_221227_74_005140_7.fits"]
         #mask = np.array([quasar_dict.get("Quasar name") in tang_quasar_names for quasar_dict in np_quasars])
         tang_indices = np.where(np.isin(self.double_names, tang_quasar_names))[0]
         #selected_indices = np.where(mask)[0]
-        contour_destination_filepath = f"{self.current_wd}binary_candidates/contour_plots/"
-        psf_destination_filepath = f"{self.current_wd}binary_candidates/psf_plots/"
-        if not exists(contour_destination_filepath):
-            os.makedirs(contour_destination_filepath)
-        if not exists(psf_destination_filepath):
-            os.makedirs(psf_destination_filepath)
-        radius = 29 #emperically-tested initial radius for the Gaussian fitting routine.
         distances = []
         pixel_scale = 0.167 #HSC asec/pixel conversion.
         tang_distances = []
         secondary_quasar_pixel_coordinates = []
         quasar_fit_radii = []
+        candidate_data = []
         for index, QSO in tqdm(enumerate(np_doubles)):
-            fitParams = dualAGN_3DPSFFit(QSO, self.double_names[index][29:-5], 30, 30, contour_destination_filepath, psf_destination_filepath, radius)
-            #IRAFPhot_table = IRAFQuasarFinder(QSO, self.double_names[index][29:-5], 30, 30, contour_destination_filepath, psf_destination_filepath, radius)
-            #print(IRAFPhot_table)
-            distance_first_pass = fitParams[17]
-            distances.append(distance_first_pass)
-            g1_xcenter = fitParams[3]
-            g1_ycenter = fitParams[4]
-            g2_xcenter = fitParams[8]
-            g2_ycenter = fitParams[9]
-            g1_sigmax = fitParams[5]
-            g1_sigmay = fitParams[6]
-            g2_sigmax = fitParams[10]
-            g2_sigmay = fitParams[11]
-
-            g1_sigma_r = np.sqrt((g1_sigmax)**2 + g1_sigmay**2)
-            g2_sigma_r = np.sqrt(g2_sigmax**2 + g2_sigmay**2)
-
-            secondary_quasar_pixel_coordinates.append([(g1_xcenter, g1_ycenter), (g2_xcenter, g2_ycenter)])
-            quasar_fit_radii.append((g1_sigma_r, g2_sigma_r))
-            if fitParams[14] == True:
-                distance_second_pass = fitParams[18]
-                distances.append(distance_second_pass)
-            if np.equal(index, tang_indices).any():
-                if fitParams[14] == True:
-                    tang_distance_second_pass = fitParams[18]
-                    tang_distances.append(tang_distance_second_pass)
-                else:
-                    tang_distances.append(distance_first_pass)
+            #QSO = np.ascontiguousarray(QSO)
+            #QSO = QSO.byteswap(inplace = True).newbyteorder()
+            bkgd = sep.Background(QSO)
+            QSO_subtracted = QSO - bkgd
+            
+            # Define the threshold for source extraction
+            threshold = 5 * bkgd.globalrms
+            
+            # Extract sources from the image
+            sources_extracted = sep.extract(QSO_subtracted, threshold, err=bkgd.globalrms)
+            source_fluxes = sources_extracted['flux']
+            sorted_indices = np.argsort(source_fluxes)[::-1]
+            sorted_objects = sources_extracted[sorted_indices]
+            
+            # Get positions of the centroids
+            x_pos = sorted_objects['x']
+            y_pos = sorted_objects['y']
+            
+            # Plot the image with extracted centroids
+            plt.figure(figsize=(10, 10))
+            plt.imshow(QSO, cmap='viridis', origin='lower', vmin=np.percentile(QSO, 1), vmax=np.percentile(QSO, 99))
+            plt.scatter(x_pos[0], y_pos[0], color='white', marker='x')
+            plt.scatter(x_pos[1], y_pos[1], color = 'white', marker='x')
+            plt.title('Extracted Centroids')
+            plt.xlabel('X Position')
+            plt.ylabel('Y Position')
+            plt.show()
+            #print(f"x positions: {np.shape(x_pos)}")
+            #print(f"y positions: {np.shape(y_pos)}")
+            print(f"Image {self.dual_names[index]} - Number of sources detected: {len(sources_extracted)}")
+        
+            if len(sources_extracted) < 2:
+                logging.info(f"SEP could not find any other sources in image {index}, returning central quasar coordinates...")
+                distances.append(0.0)
+                continue
+            else:
+                x_brightest1, y_brightest1 = x_pos[0], y_pos[0]
+                x_brightest2, y_brightest2 = x_pos[1], y_pos[1]
+                distance = np.sqrt((x_brightest1 - x_brightest2)**2 + (y_brightest1 - y_brightest2)**2)
+                
+                distances.append(distance)
+                candidate_data.append({
+                "Object ID": self.dual_names[index],
+                "Pixel Separation": distance,
+                "Angular Separation (arcsec)": distance*pixel_scale})
+    
+                secondary_quasar_pixel_coordinates.append([(x_brightest1, y_brightest1), (x_brightest2, y_brightest2)])
+                if np.equal(index, tang_indices).any():
+                    tang_distances.append(distance)
             #Distances are in pixels. We need to convert to arcseconds via the HSC asec/pixel conversion.
         distances = np.asarray(distances)
         pixel_distances = distances
         distances = distances*pixel_scale
         tang_distances = np.asarray(tang_distances)
         tang_distances = tang_distances*pixel_scale
-        plt.hist(distances, bins = np.arange(0.1, 3.0, 0.1), label = "Binary Candidates", histtype = "step", stacked = True, color = "midnightblue")
-        plt.hist(tang_distances, bins = np.arange(0.1, 3.0, 0.1), label = "Tang et al. Candidates", histtype = "step", stacked = True, color = "lightsalmon")
+        df = pd.DataFrame(candidate_data)
+        print(df)
+        plt.hist(distances, bins = np.arange(1.0, 12.0, 0.5), label = "Binary Candidates", histtype = "bar", stacked = True, color = "midnightblue")
+        plt.hist(tang_distances, bins = np.arange(1.0, 12.0, 0.5), label = "Tang et al. Candidates", histtype = "bar", stacked = True, color = "lightsalmon")
         plt.xlabel("Separations [arcseconds]")
-        plt.ylabel("Number of Binary Candidates")
-        plt.title("Angular Separation of Binary Candidates")
-        plt.grid()
+        plt.ylabel("Number of Dual AGN Candidates")
+        plt.title("Angular Separation of Dual AGN Candidates")
+        #plt.grid()
         plt.legend(loc = 'best')
-        plt.savefig("f{self.current_wd}/binary_candidates/distances.png")
+        plt.savefig(f"{self.current_wd}/binary_candidates/distances.png")
         plt.show()
-        return distances, tang_distances, pixel_distances, secondary_quasar_pixel_coordinates, np_doubles, quasar_fit_radii, tang_indices
+        return distances, tang_distances, pixel_distances, secondary_quasar_pixel_coordinates, np_doubles, self.dual_names
     #def pos_to_wcs(self, pixel_x, pixel_y, wcs): #useful for when I need to find the coordinates of the secondary object.
 
     def find_physical_separations(self, ra, dec, z, angular_separation):
         #ra = ra % 180
         #ra[ra > 90] -= 180
         #cosmo = FlatLambdaCDM(H0=70 * u.km / u.s / u.Mpc, Om0=0.3)
-        cosmo = FlatLambdaCDM(H0 = 69.6 * u.km / u.s / u.Mpc, Om0 =  0.286, Tcmb0 = 2.725)
+        cosmo = FlatLambdaCDM(H0=69.6 * u.km / u.s / u.Mpc, Om0=0.286, Tcmb0=2.725)
+    
+        # Calculate the comoving distance to the redshift
         comoving_distance = cosmo.comoving_distance(z)
-        print(comoving_distance)
-        print(type(comoving_distance))
-        central_quasar = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, distance=comoving_distance)
-        # Calculate the physical separation by assuming the same coordinates for the second object
-        #secondary_quasar = central_quasar.directional_offset_by(angular_separation*u.deg, 0*u.deg, physical_distance)# assuming that the secondary object is at the same redshift (and therefore is physically associated)
-        #secondary_quasar = central_quasar.directional_offset_by(angular_separation*u.deg, physical_distance)# assuming that the secondary object is at the same redshift (and therefore is physically associated)
-        #secondary_quasar = central_quasar.directional_offset_by(0*u.deg, angular_separation*u.deg)
-        # Calculate the transverse comoving separation
-        angular_separation_rad = angular_separation*(1.0/206264.80624709636)
-        physical_separation = angular_separation_rad * comoving_distance.to(u.kpc)
-        #transverse_comoving_separation = angular_separation *u.arcsec * comoving_distance.to(u.rad)
-        #physical_separation = transverse_comoving_separation.to(u.Mpc)
-        #transverse_comoving_separation = angular_separation * physical_distance.to(u.rad)
-        #transverse_comoving_separation = angular_separation/60.0 *cosmo.kpc_comoving_per_arcmin(z)
-        #transverse_comoving_separation.to(u.kpc/u.arcsec)
-        #print(transverse_comoving_separation)
-        print(physical_separation)
+        
+        # Convert angular separation from arcseconds to radians
+        angular_separation_rad = angular_separation * (1.0 / 206264.80624709636)  # arcseconds to radians
+        
         # Calculate the physical separation
-        #physical_separation = (transverse_comoving_separation) * u.arcmin.to(u.deg) * cosmo.kpc_proper_per_arcmin(z).to(u.Mpc)
-        #physical_separation = (transf)
-        #physical_separation = transverse_comoving_separation.to(u.Mpc)
-
-        #physical_separation = central_quasar.separation_3d(secondary_quasar)
-        # Print the result
-        print(f"Angular Separation: {angular_separation} arcseconds")
-        print(f"Redshift: {z}")
+        physical_separation = angular_separation_rad * comoving_distance.to(u.kpc)
+        #print(f"Angular Separation: {angular_separation} arcseconds")
+        #print(f"Redshift: {z}")
         #print(f"Physical Separation: {physical_separation:.2f} Mpc")
         return physical_separation.value
 
-    def plot_physical_separation(self, physical_separations, tang_physical_separations = None):
+    def plot_physical_separation(self, physical_separations, redshifts = None, angular_separations = None, tang_physical_separations = None):
         #z_array = np.asarray(zList)
         #ra_array = np.asarray(raList)
         #dec_array = np.asarray(dec_array)
         #plt.hist(physical_separations, bins = 'auto', histtype = "step", stacked = True, label = 'All 45 Binary Candidates')
-        n, bins, patches = plt.hist(physical_separations, bins='auto', histtype="stepfilled", stacked=True, label='All 94 Binary Candidates', alpha = 0.8, color = "midnightblue")
-        n1, bins1, patches1 = plt.hist(tang_physical_separations, bins = 'auto', label = "Tang et al. Candidates", histtype = "stepfilled", stacked = True, color = "lightsalmon")
+        hfont = {'fontname':'serif'}
+        n, bins, patches = plt.hist(physical_separations, bins=np.arange(0, 100, 5), histtype="stepfilled", stacked=True, label=f'All {len(physical_separations)} Binary Candidates', alpha = 0.8, color = "midnightblue")
+        n1, bins1, patches1 = plt.hist(tang_physical_separations, bins = np.arange(0, 100, 5), label = "Tang et al. Candidates", histtype = "stepfilled", stacked = True, color = "lightsalmon")
         for count, x in zip(n, bins):
             plt.annotate(str(int(count)), xy=(x + 10, count), xytext=(0, 5), textcoords='offset points', ha='center')
 
-        plt.xlabel("Physical Separation [kpc]")
-        plt.ylabel("Number of Quasar Pairs")
-        plt.title("Physical Separations of Dual AGN Candidates")
+        plt.xlabel("Physical Separation [kpc]", **hfont)
+        plt.ylabel("Number of Quasar Pairs", **hfont)
+        plt.title("Physical Separations of Dual AGN Candidates", **hfont)
         plt.grid()
         plt.legend(loc = 'best')
         plt.savefig(f"{self.current_wd}binary_candidates/physical_distances.png")
         plt.show()
+        plt.close()
 
-    def quasar_photometry(self, image, center_coords, secondary_coords, quasar_fit_radii, flux_mag_0):
-        primary_radius, secondary_radius = quasar_fit_radii
+        if redshifts is not None:
+            #fig, axes = plt.subplots(1, 2, figsize=(10,10))
+            """axes[0].scatter(redshifts, physical_separations, color = 'midnightblue', label = "Discovered candidates", s = 1, alpha = 0.8)
+            axes[0].set_xlabel("$z$", **hfont)
+            axes[0].set_ylabel("Physical separation [kpc]", **hfont)
+            axes[0].set_title("Redshift vs Physical Separations for Discovered Dual AGN Candidates", **hfont)"""
+            plt.scatter(redshifts, physical_separations, color = 'midnightblue', label = "Discovered candidates", s = 10, alpha = 0.8)
+            plt.xlabel("$z$", **hfont)
+            plt.ylabel("Physical separation [kpc]", **hfont)
+            plt.title("Redshift vs Physical Separations for Discovered Dual AGN Candidates", **hfont)
+            plt.legend(loc='best')
+
+            """axes[1].scatter(redshifts, angular_separations, color = 'firebrick', labeled = "Discovered candidates", s = 1, alpha = 0.8)
+            axes[1].set_xlabel("$z$", **hfont)
+            axes[1].set_ylabel("Physical separation [kpc]", **hfont)
+            axes[1].set_title("Redshift vs Angular Separations for Discovered Dual AGN Candidates", **hfont)"""
+
+            #plt.tight_layout()
+            plt.savefig(f"{self.current_wd}physical_angular_sep_vs_redshift.png", dpi = 300)
+            plt.show()
+
+    def quasar_photometry(self, image, center_coords, secondary_coords, flux_mag_0):
+        #primary_radius, secondary_radius = quasar_fit_radii
         sigclip = SigmaClip(sigma = 3.0, maxiters = 10)
         center_x, center_y = center_coords
+        print(center_x)
+        print(center_y)
         secondary_x, secondary_y = secondary_coords
-        aperture_1 = CircularAperture(center_coords, r = 2.5*primary_radius)
-        annulus_1 = CircularAnnulus(center_coords, r_in = 10, r_out = 20) # adjust the size of the annulus according to how large
+
+        # The following section of the function will calculate the radius via the FWHM returned by fitting a Moffat light profile to each of the returned objects. This will be used to determine the radius for aperture photometry.
+        cutout_size = 5 # play around with this as needed.
+        x_min_c, x_max_c = int(center_x - cutout_size), int(center_x + cutout_size)
+        y_min_c, y_max_c = int(center_y - cutout_size), int(center_y + cutout_size)
+
+        x_min_s, x_max_s = int(secondary_x - cutout_size), int(secondary_x + cutout_size)
+        y_min_s, y_max_s = int(secondary_y - cutout_size), int(secondary_y + cutout_size)
+        cutout_c = image[y_min_c:y_max_c, x_min_c:x_max_c]
+        cutout_s = image[y_min_s:y_max_s, x_min_s:x_max_s]
+        yy_c, xx_c = np.mgrid[:cutout_c.shape[0], :cutout_c.shape[1]]
+
+        # Fit Moffat profile
+        """moffat_init_c = astropy.modeling.models.Moffat2D(amplitude=cutout_c.max(), x_0 = center_x, y_0 = center_y, gamma = 1, alpha = 1.5)
+        fitter = fitting.LevMarLSQFitter()
+        y_data_c, x_data_c = np.indices(cutout_c.shape)
+        finite_mask = np.isfinite(cutout_s)
+        cutout_c = cutout_c[finite_mask]
+        x_data_c = x_data_c[finite_mask]
+        y_data_c = y_data_c[finite_mask]
+        moffat_fit_center = fitter(moffat_init_c, x_data_c, y_data_c, cutout_c)
+        center_radius = 2 * moffat_fit_center.gamma.value * np.sqrt(2**(1/moffat_fit_center.alpha.value) - 1)
+        #center_radius = 10"""
+
+        # Performing same procedure for secondary AGN
+        """moffat_init_s = astropy.modeling.models.Moffat2D(amplitude = cutout_s.max(), x_0 = secondary_x, y_0 = secondary_y, gamma = 1, alpha = 1.5)
+        fitter = fitting.LevMarLSQFitter()
+        y_data_s, x_data_s = np.indices(cutout_s.shape)
+        if cutout_s.ndim != 2:
+            raise ValueError(f"Expected a 2D array, but got {cutout_s.ndim}D array")
+        
+        # Make sure to remove NaNs and infs from cutout_s
+        cutout_s = np.nan_to_num(cutout_s, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Check for non-finite values again
+        if not np.all(np.isfinite(cutout_s)):
+            raise ValueError("Non-finite values still present after filtering.")
+
+
+        moffat_fit_secondary = fitter(moffat_init_s, x_data_s, y_data_s, cutout_s)
+        secondary_radius = 2 * moffat_fit_secondary.gamma.value * np.sqrt(2**(1/moffat_fit_secondary.alpha.value) - 1)"""
+        #secondary_radius = center_radius
+        radius = 5
+        aperture_1 = CircularAperture(center_coords, r = radius)
+        annulus_1 = CircularAnnulus(center_coords, r_in = radius, r_out = radius+10) # adjust the size of the annulus according to how large
         #the quasars should be.
         #aper_stats_1 = ApertureStats(image, aperture_1, sigma_clip = None)
         #bkgd_stats = ApertureStats(image, annulus_1, sigma_clip = sigclip)
         #total_bkg = bkg_stats.median * aper_stats_1.sum_aper_area.value
-        i#mage = image - bkgd_mean
-        aperture_2 = CircularAperture(secondary_coords, r = 2.5*secondary_radius)
+        #image = image - bkgd_mean
+        aperture_2 = CircularAperture(secondary_coords, r = radius)
         #annulus_2 = CircularAnnulus(secondary_coords, r_in = 10, r_out = 20)
         #apertures = [aperture_1, aperture_2]
         #aper_stats = ApertureStats(image, aperture_2, sigma_clip = None)
@@ -593,7 +672,8 @@ class testResults:
         print(phot_table_2)
         return inst_mag_1, inst_mag_2, flux_ratio, mag_difference
         #phot_table_1 = aperture_photometry(image, annulus_1)
-
+    def plot_magnitudes(flux_ratios, physical_separations, magnitude_differences, inst_mags_center = None, inst_mags_secondary = None):
+        pass
 
 class loadModelClass:
     def __init__(self, path_to_model):
