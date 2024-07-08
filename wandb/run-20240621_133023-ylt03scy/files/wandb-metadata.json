@@ -1,0 +1,225 @@
+{
+    "os": "Linux-4.18.0-477.55.1.el8_8.x86_64-x86_64-with-glibc2.28",
+    "python": "3.11.8",
+    "heartbeatAt": "2024-06-21T17:30:23.571205",
+    "startedAt": "2024-06-21T17:30:23.019416",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--experiment_name=lower_learning_rate_test_1",
+        "--data_dir=data_preprocessing/training_datasets",
+        "--split_slug=balanced-dev2",
+        "--batch_size=32",
+        "--epochs=30",
+        "--lr=1e-6",
+        "--momentum=1e-05",
+        "--crop",
+        "--n_workers=1",
+        "--cutout_size=94",
+        "--n_classes=5",
+        "--no-nesterov",
+        "--dropout_rate=0.3",
+        "--loss=ce",
+        "--weight_decay=0.01",
+        "--expand_data=2"
+    ],
+    "state": "running",
+    "program": "/vast/palmer/scratch/urry/iam37/Project_DRAGON/DRAGON_CNN/train/train.py",
+    "codePathLocal": "train/train.py",
+    "codePath": "train/train.py",
+    "git": {
+        "remote": "git@github.com:iam37/DRAGON_CNN.git",
+        "commit": "eeba9339c8a27141fe8c10d7ac1da03654bcbb74"
+    },
+    "email": "isaac.moskowitz@yale.edu",
+    "root": "/vast/palmer/scratch/urry/iam37/Project_DRAGON/DRAGON_CNN",
+    "host": "r903u37n01.grace.ycrc.yale.edu",
+    "username": "iam37",
+    "executable": "/home/iam37/.conda/envs/DualFinder/bin/python",
+    "cpu_count": 32,
+    "cpu_count_logical": 32,
+    "cpu_freq": {
+        "current": 3474.67803125,
+        "min": 3500.0,
+        "max": 3500.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3300.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3122.78,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3266.917,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        },
+        {
+            "current": 3500.0,
+            "min": 3500.0,
+            "max": 3500.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 125.79541778564453,
+            "used": 0.3273963928222656
+        }
+    },
+    "gpu": "NVIDIA RTX A5000",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA RTX A5000",
+            "memory_total": 25757220864
+        }
+    ],
+    "memory": {
+        "total": 251.59083938598633
+    }
+}

@@ -100,6 +100,7 @@ class DualFinder:
     def encode_labels(self, initial_labels, validation_labels):
         #label_mapping = {'empty_sky': 0, 'star':1, 'single_AGN': 2, 'offset_AGN': 3,'dual_AGN': 4}
         label_mapping = {'empty_sky': 0, 'rubbish': 1, 'single_AGN': 2, 'offset_AGN': 3, 'dual_AGN': 4, 'merger': 5}
+        #label_mapping = {'empty_sky': 0, 'single_AGN': 1, 'offset_AGN': 2, 'dual_AGN': 3, 'merger': 4}
         print(initial_labels)
         print(validation_labels)
         if isinstance(initial_labels, np.ndarray):
@@ -142,6 +143,7 @@ class DualFinder:
     def trainCNN(self, dropout_rate = 0.32523228915885216, save_feature_maps = True, model_filepath = "../saved_dual_finder_models/"):
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         self.class_names = ["empty_sky", "rubbish", "single_AGN", "offset_AGN", "dual_AGN", "merger"]
+        #self.class_names = ["empty_sky", "single_AGN", "offset_AGN", "dual_AGN", "merger"]
         train_labels, val_labels = self.encode_labels(self.initial_labels, self.validation_labels)
         class_indices = np.argmax(train_labels, axis = 1)
         #class_weights = compute_class_weight('balanced', classes=np.unique(train_labels), y=train_labels)

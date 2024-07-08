@@ -53,6 +53,8 @@ def load_images(filepath, label, crop_center_fn, augment_fn, num_augmented_image
                     img = hdul[0].data
                 elif 'offset' in label:
                     img = hdul[0].data
+                elif 'rubbish' in label:
+                    img = fits.getdata(image_file, memmap=False)
                 else:
                     img = hdul[1].data
                 img = crop_center_fn(img, 94, 94)

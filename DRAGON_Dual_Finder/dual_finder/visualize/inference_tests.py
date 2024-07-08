@@ -312,6 +312,7 @@ class testResults:
         #label_names = ["empty_sky", "rubbish", "single_AGN", "offset_AGN", "dual_AGN", "merger"]
         #label_names = ['empty_sky', 'single_AGN', 'dual_AGN', "merger"]
         label_names = ["empty_sky", "rubbish", "single_AGN", "offset_AGN", "dual_AGN", "merger"]
+        #label_names = ["empty_sky", "single_AGN", "offset_AGN", "dual_AGN", "merger"]
         self.test_results = []
         num_doubles = 0
         num_singles = 0
