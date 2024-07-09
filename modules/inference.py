@@ -96,10 +96,19 @@ def predict(
 
     yh = torch.cat(yh)
 
-    # Get the predicted class indices
+    values, indices = torch.topk(yh, 2, dim=1)
+
+    # Get the highest predicted confidence and label
     predicted_confs, predicted_labels = torch.max(yh, 1)
 
-    return predicted_labels.cpu().numpy(), predicted_confs.cpu().numpy()
+    # Get the second highest predicted confidence and label
+    second_predicted_confs = values[:, 1]
+    second_predicted_labels = indices[:, 1]
+
+    return (predicted_labels.cpu().numpy(),
+            predicted_confs.cpu().numpy(),
+            second_predicted_labels.cpu().numpy(),
+            second_predicted_confs.cpu().numpy())
 
 
 @click.command()
@@ -260,7 +269,7 @@ def main(
         logging.info(f"Running inference run {run_num}")
 
         # Make predictions
-        preds, cis = predict(
+        preds, cis, spreds, scis = predict(
             model_path,
             dataset,
             cutout_size,
@@ -278,6 +287,9 @@ def main(
         catalog = load_data_dir(data_dir, slug, split)
         catalog["predicted_labels"] = preds
         catalog["predicted_confidence"] = cis  # Writing probabilities.
+
+        catalog["second_predicted_labels"] = spreds
+        catalog["second_predicted_confidence"] = scis  # Writing probabilities.
 
         cat_path = output_path + f"inf_{run_num}.csv"
         logging.info(f"Catalog saved to {cat_path}")
