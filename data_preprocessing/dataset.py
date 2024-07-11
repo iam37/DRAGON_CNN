@@ -108,7 +108,7 @@ class FITSDataset(Dataset):
         n = len(self.filenames)
         logging.info("Preloading PyTorch tensors before transfer...")
         filepaths = [fl.replace('/', '_') if '/' in fl else fl for fl in self.filenames]  # Flatten
-        load_fn = partial(load_tensor, tensors_path=self.tensors_path)
+        load_fn = partial(load_tensor, tensors_path=self.tensors_path, as_numpy=True)
 
         with mp.Pool(min(n_workers, mp.cpu_count())) as p:
             # Load to NumPy, then convert to PyTorch (hack to solve system
@@ -116,6 +116,8 @@ class FITSDataset(Dataset):
             self.observations = list(
                 tqdm(p.imap(load_fn, filepaths), total=n)
             )
+        self.observations = [torch.from_numpy(x) for x in self.observations]
+
         logging.info("Initialization of FITS Dataset Completed.")
 
         self.sampler = None
