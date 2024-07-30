@@ -13,40 +13,37 @@
 
 <hr>
 
-The Galaxy Morphology Posterior Estimation Network (GaMPEN) is a novel
-machine learning framework for estimating the Bayesian posteriors (i.e.,
-values + uncertainties) of morphological parameters for arbitrarily
-large numbers of galaxies. GaMPEN also automatically crops input galaxy
-images to an optimal size before morphological parameter estimation.
+The Data Reduced AGN + Galaxy Optical Network (DRAGON) is a novel 
+convolutional neural network that, when trained, accurately differentiates 
+between single AGN, dual AGN, offset AGN, and galaxy mergers in large
+sky survey fields. The architecture is loosely inspired by the GaMorNet 
+architecture.
 
-GaMPEN's predicted uncertainties have been shown to be upto ~60%
-more accurate compared to traditional light-profile fitting codes. GaMPEN 
-can be adapted to work on both ground and space-based imaging;
-and to predict both parametric and non-parametric estimates of
-morphology.
+DRAGON is one of the first of its kind to differentiate between 
+extended and point source morphologies. It is shown to be
+highly accurate, finding double the number of known dual AGN
+candidates in the HSC field with high confidence. DRAGON
+can be adapted to work on both ground and space-based imaging.
 
-Once trained, it takes GaMPEN less than a milli-second to perform a
-single model evaluation on a CPU. Thus, GaMPEN's posterior prediction
-capabilities are ready for large galaxy samples expected from upcoming
-large imaging surveys, such as Rubin-LSST, Euclid, and NGRST.
-
-**For a quick read-through of why GaMPEN was developed, what challenges
-it addresses, and how it works** see this
-[link](http://gampen.ghosharitra.com/)
+Once trained, it takes DRAGON on the order of a milli-second to perform a
+single model evaluation on a GPU. Thus, DRAGON is ready for large galaxy samples 
+expected from upcoming large imaging surveys, such as Rubin-LSST, Euclid, and NGRST.
 
 # Documentation
 
-GaMPEN's documentation is available in this repository and also hosted 
-on [readthedocs.io](https://gampen.readthedocs.io/) . Although the documentation
-is fairly complete; if you are trying to use  GaMPEN and run into issues, 
-please get in touch with us!
+DRAGON's documentation will be available in this repository and also hosted 
+on [readthedocs.io](https://dragon.readthedocs.io/) . The documentation is
+not complete; for usage, please get in touch with us!
+
+For access to the Public Data Release associated with this project,
+please go to the [DragonCandidates](https://github.com/auroriasjn/DRAGONCandidates) repository.
 
 # Publication
 
-GaMPEN was initially introduced in this [ApJ
+DRAGON was initially introduced in this [ApJ
 paper](https://iopscience.iop.org/article/10.3847/1538-4357/ac7f9e)
 
-An updated record of GaMPEN's trained models and catalogs produced are
+An updated record of DRAGON's trained models and catalogs produced are
 maintained [here](http://gampen.ghosharitra.com/)
 
 ## Attribution Info.
@@ -70,7 +67,7 @@ year = {2022},
 
 # License
 
-Copyright 2022 Aritra Ghosh, Amrit Rau & contributors
+Copyright 2024 Isaac Moskowitz, Jeremy Ng & contributors
 
 Made available under a [GNU GPL
 v3.0](https://github.com/aritraghsh09/GaMPEN/blob/master/LICENSE)
@@ -78,20 +75,16 @@ license.
 
 # Contributors
 
-GaMPEN was initially developed by [Amrit Rau](https://amritrau.xyz/) and
-[Aritra Ghosh](http://www.ghosharitra.com/)
-
-The initial documentation was developed by [Aayush
-Mishra](https://github.com/aayush2505) and [Aritra
-Ghosh](http://www.ghosharitra.com/)
+DRAGON and its initial documentation were initially developed by 
+[Jeremy Ng](https://linkedin.com/ngjeremyed) and [Isaac Moskowitz](http://www.ghosharitra.com/)
 
 For an updated list of all current contributors, please see
 [here](https://github.com/aritraghsh09/GaMPEN/graphs/contributors)
 
 # Getting Help/Contributing
 
-If you have a question, please send me an e-mail at this
-`aritraghsh09@xxxxx.com` GMail address.
+If you have a question, please send me an e-mail either to `isaac.moskowitz@yale.edu` or
+`jeremy.ng@yale.edu`.
 
 If you have spotted a bug in the code/documentation or you want to
 propose a new feature, please feel free to open an issue/a pull request
