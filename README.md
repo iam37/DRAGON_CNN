@@ -76,7 +76,7 @@ license.
 # Contributors
 
 DRAGON and its initial documentation were initially developed by 
-[Jeremy Ng](https://linkedin.com/ngjeremyed) and [Isaac Moskowitz](http://www.ghosharitra.com/)
+[Jeremy Ng](https://linkedin.com/ngjeremyed) and [Isaac Moskowitz](www.linkedin.com/in/isaac-moskowitz-2255662a9)
 
 For an updated list of all current contributors, please see
 [here](https://github.com/aritraghsh09/GaMPEN/graphs/contributors)
