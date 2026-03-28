@@ -1,11 +1,4 @@
-import numpy as np
-
-import torch
 import torch.nn as nn
-import torch.optim as optim
-from torchvision import transforms, datasets
-from ignite.engine import Engine, Events
-from ignite.metrics import Accuracy, Recall, Precision, Fbeta, confusion_matrix, ConfusionMatrix, EpochMetric
 
 class DRAGON(nn.Module):
     def __init__(self, cutout_size=94, channels=1, num_classes=6):
@@ -45,14 +38,12 @@ class DRAGON(nn.Module):
             nn.LeakyReLU(),
             nn.AvgPool2d(kernel_size=2, stride=1),
         )
-
         self.layer5 = nn.Sequential(
             nn.Conv2d(256, 384, kernel_size=3, padding='same'),
             nn.BatchNorm2d(384),
             nn.LeakyReLU(),
             nn.AvgPool2d(kernel_size=2, stride=1)
         )
-
         self.layer6 = nn.Sequential(
             nn.Conv2d(384, 384, kernel_size=3, padding='same'),
             nn.BatchNorm2d(384),

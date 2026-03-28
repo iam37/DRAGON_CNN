@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 import click
 import logging
-import math
-from pathlib import Path
 from functools import partial
 
 import wandb

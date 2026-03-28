@@ -1,21 +1,11 @@
 from astropy.io import fits
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-
 import os
-import pathlib
-from pathlib import Path
 from tqdm import tqdm
 import numpy as np
-
-import kornia.augmentation as K
 import operator
-
-import shutil
-from ipywidgets import Output
 import ipywidgets as widgets
-from IPython.display import display, clear_output
-from matplotlib.backend_bases import MouseButton
+from IPython.display import display
 import glob
 import shutil
 
@@ -24,6 +14,7 @@ def cropND(img, bounding):
     end = tuple(map(operator.add, start, bounding))
     slices = tuple(map(slice, start, end))
     return img[slices]
+
 def load_fits_images(data_path, target_shape=(94, 94)):
     training_images = []
     image_files = []

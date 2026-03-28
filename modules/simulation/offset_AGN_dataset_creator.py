@@ -1,43 +1,21 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from astropy.io import fits
-import pandas as pd
-from astropy.io import fits
-from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
-import astropy.units as u 
-from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord
-from astropy.coordinates import ICRS, Galactic, FK4, FK5
-from astropy.utils.data import get_pkg_data_filename
-from astropy.cosmology import WMAP9 as cosmo
-from photutils import DAOStarFinder, CircularAperture, CircularAnnulus, aperture_photometry, RectangularAperture, RectangularAnnulus
 from astropy.modeling.models import Gaussian2D, Sersic2D
-from astropy.convolution import Gaussian2DKernel, convolve_fft
-from astropy.nddata import CCDData
-from astropy.modeling.models import Moffat2D
-from astropy.convolution import convolve
-from astropy.convolution import Moffat2DKernel
-from astropy.stats import gaussian_sigma_to_fwhm
 import glob
 from tqdm import tqdm
 import os
 from os.path import exists
 
 class DatasetCreator:
-    def __init__(self):
-        pass
-    def crop_center(self, img, cropx, cropy):
-    
-        #Function from  
-        #https://stackoverflow.com/questions/39382412/crop-center-portion-of-a-numpy-image
-        
+    @staticmethod
+    def crop_center(img, cropx, cropy):
         y, x, *_ = img.shape
         startx = x // 2 - (cropx // 2)
-        #print(startx)
-        starty = y // 2 - (cropy // 2) 
-        #print(starty)
+        starty = y // 2 - (cropy // 2)
+
         return img[starty:starty + cropy, startx:startx + cropx, ...]
+
     def make_random_galaxy_table(self, number, params, seed):
         """
         Generate a table of random galaxy parameters.
@@ -45,13 +23,12 @@ class DatasetCreator:
         np.random.seed(seed)
 
         table = Table()
-        #print(params)
         for param_name, param_range in params.items():
             param_values = np.random.uniform(param_range[0], param_range[1], size=number) #figure out why galaxies are only in the upper right corner
             table[param_name] = param_values
-        #print(len(table))
 
         return table
+
     def make_galaxy_image(self, shape, galaxies):
         """
         Generate an image with galaxies using the provided parameters.
@@ -140,7 +117,7 @@ class DatasetCreator:
                 galaxy_im = self.make_galaxy_image(image.shape, sources)
 
                 return galaxy_im
-        else: 
+        else:
             pass
     def extract_single_galaxies(self, galaxy_filepath):
         self.singleton_images = []
@@ -151,7 +128,7 @@ class DatasetCreator:
                 img = self.crop_center(img, 94, 94)
                 self.singleton_images.append(img)
                 last_backslash_index = image.rfind('//')
-                
+
                 # Split the string from the last occurrence of the backslash
                 if last_backslash_index != -1:
                     #parts_before_last_backslash.append(image[:last_backslash_index])
@@ -169,7 +146,7 @@ class DatasetCreator:
                 img = self.crop_center(img, 94, 94)
                 self.single_point_sources.append(img)
                 self.single_point_names.append(f"{ii}")
-                    
+
     def extract_rotated_AGN(self, rotated_AGN_filepath_prefix):
         #asec_separations = ["2.0","1.9", "1.8", "1.7", "1.6", "1.4", "1.3", "1.2", "1.1","1.0", "0.8", "0.7", "0.6", "0.5"]
         asec_separations = np.arange(0.5, 2.5, 0.05)
@@ -181,11 +158,11 @@ class DatasetCreator:
                     comp_img = hdul[1].data
                     comp_img = self.crop_center(comp_img, 94, 94)
                     #comp_img = np.expand_dims(comp_img, axis = -1)
-    
+
                     self.rotated_AGN.append(comp_img)
                     # Find the last occurrence of the backslash
                     last_backslash_index = image.rfind('//')
-                    
+
                     # Split the string from the last occurrence of the backslash
                     if last_backslash_index != -1:
                         #parts_before_last_backslash.append(image[:last_backslash_index])
@@ -196,9 +173,9 @@ class DatasetCreator:
                         self.AGN_names.append(f"AGN_{k}")
 
     def convolve_galaxy_AGN(self, galaxy_img, AGN_img):
-        #convolved_image = convolve_fft(AGN_img, galaxy_img)
         convolved_image = galaxy_img + AGN_img
-        return convolved_image 
+        return convolved_image
+
     def create_convolution(self, fits_filepath = "offset_AGN_images/"):
         if not exists(fits_filepath):
             os.makedirs(fits_filepath)
@@ -213,15 +190,3 @@ class DatasetCreator:
                 hdul = fits.HDUList([hdu])
                 #print(f"{fits_filepath}object{ii}_with_AGN_{j}.fits")
                 hdul.writeto(f"{fits_filepath}object{ii}_with_AGN_{j}.fits" , overwrite=True)
-            """for k, single_point_source in enumerate(self.single_point_sources):
-                convolved_image = self.convolve_galaxy_AGN(galaxy_img, single_point_source)
-                single_name = self.single_point_names[k]
-                hdu = fits.PrimaryHDU(convolved_image)
-                hdul = fits.HDUList([hdu])
-                hdul.writeto(f"{fits_filepath}{galaxy_name}_with_point_source_{single_name}.fits", overwrite = True)"""
-                
-
-
-
-
-

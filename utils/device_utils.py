@@ -1,6 +1,5 @@
 import torch
 import logging
-import torch.multiprocessing as mp
 
 
 def discover_devices():

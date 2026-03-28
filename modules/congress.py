@@ -1,14 +1,6 @@
-import os
-import sys
 import pandas as pd
-from tqdm import tqdm
-from astropy.io import fits
-import operator
 import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
-import matplotlib
-import subprocess
 from collections import Counter
 import subprocess
 import click
