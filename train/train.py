@@ -163,7 +163,10 @@ def train(**kwargs):
         model_args["dropout"] = "True"
 
     model = cls(**model_args)
-    model = nn.DataParallel(model) if args["parallel"] else model
+    if args["parallel"] and torch.cuda.device_count() > 1:
+        model = nn.DataParallel(model)
+        args["device"] = "cuda"
+
     model = model.to(args["device"])
 
     # Chnaging the default dropout rate if specified

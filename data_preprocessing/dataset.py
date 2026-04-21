@@ -29,96 +29,85 @@ class FITSDataset(Dataset):
     improve data_preprocessing load speed."""
 
     def __init__(
-        self,
-        data_dir='/dev/null',
-        label_col="classes",
-        slug=None,  # a slug is a human readable ID
-        split=None,  # splits are defined in make_split.py file.
-        cutout_size=94,
-        normalize=False,  # Whether labels will be normalized.
-        transforms=None,  # Supports a list of transforms or a single transform func.
-        channels=1,
-        load_labels=True,
-        num_classes=None,
-        force_reload=False,
-        n_workers=1,
-        expand_factor=1
+            self,
+            data_dir='/dev/null',
+            label_col="class",
+            slug=None,
+            split=None,
+            cutout_size=94,
+            normalize=False,
+            transforms=None,
+            channels=3,
+            load_labels=True,
+            num_classes=None,
+            n_workers=1,
+            expand_factor=1
     ):
-        # Set data_preprocessing directories
-        self.data_dir = Path(data_dir)  # As long as you keep the label csv in one spot with all nested directories
-        self.cutouts_path = self.data_dir / "cutouts"
+        # Set data directories
+        self.data_dir = Path(data_dir)
         self.tensors_path = self.data_dir / "tensors"
-        self.tensors_path.mkdir(parents=True, exist_ok=True)
+
+        if not self.tensors_path.exists():
+            raise FileNotFoundError(
+                f"Tensors directory not found at {self.tensors_path}. Please generate tensors first.")
 
         # Initialize image metadata
         self.channels = channels
-
-        device = discover_devices()
-
-        # Initializing cutout shape, assuming the shape is roughly square-like.
         self.cutout_shape = (channels, cutout_size, cutout_size)
-
-        # Set requested transforms
         self.normalize = normalize
         self.transform = transforms
         self.expand_factor = expand_factor
 
-        # Define paths
+        # Define paths and load dataframe
         self.data_info = load_data_dir(self.data_dir, slug, split)
-        self.filenames = np.asarray(self.data_info["file_name"])
 
-        # Loading labels if for training, not if for inference.
+        # Loading labels
         if load_labels:
             label_info_path = self.data_dir / "labels.csv"
             if label_info_path.is_file():
-                # If a label csv dictionary is provided with strings
                 label_df = pd.read_csv(label_info_path)
                 self.label_dict = {row["key"]: row["value"] for _, row in label_df.iterrows()}
                 self.labels = np.asarray([self.label_dict[v] for v in self.data_info[label_col]])
             else:
                 self.labels = np.asarray(self.data_info[label_col])
 
-            # Declare number of classes automatically
-            self.num_classes = np.unique(self.labels) if num_classes is None else num_classes
+            self.num_classes = len(np.unique(self.labels)) if num_classes is None else num_classes
         else:
-            # generate fake labels of appropriate shape
-            self.labels = np.ones((len(self.data_info), len(label_col)))  # Double check
+            self.labels = np.ones((len(self.data_info), 1))
             self.num_classes = 1
 
-        # If we haven't already generated PyTorch tensor files, generate them
-        logging.info("Generating PyTorch tensors from FITS files...")
-        if force_reload:
-            logging.info("Force reload on, regenerating...")
+        # --- LEGACY VS NEW FORMAT ROUTING ---
+        if "file_name" in self.data_info.columns:
+            logging.info("Legacy 'file_name' column detected. Routing to legacy filepath logic.")
+            self.filenames = np.asarray(self.data_info["file_name"])
+            # Replicate your original flattening logic
+            self.tensor_filepaths = []
+            for fl in self.filenames:
+                flattened_filename = fl.replace('/', '_')
+                # Assuming .pt extension since we removed inline FITS generation
+                self.tensor_filepaths.append(str(self.tensors_path / f"{flattened_filename}.pt"))
 
-        for filename in tqdm(self.filenames):
-            flattened_filename = filename.replace('/', '_')  # Flattening out the directory and altering file path.
-            filepath = self.tensors_path / (flattened_filename + ".pt")
-            if not filepath.is_file() or force_reload:  # If the tensors were not pre-generated, this returns True.
-                # All files saved to one cutouts folder.
-                if self.cutouts_path.is_dir():
-                    load_path = self.cutouts_path / filename  # (If we want to maintain cutouts method)
-                else:
-                    load_path = self.data_dir / filename
+        elif "object_id" in self.data_info.columns:
+            logging.info("New 'object_id' column detected. Routing to multi-band filepath logic.")
+            self.object_ids = np.asarray(self.data_info["object_id"])
+            self.tensor_filepaths = [str(self.tensors_path / f"{obj_id}.pt") for obj_id in self.object_ids]
 
-                # Loading and saving tensor to flattened name.
-                t = FITSDataset.load_fits_as_tensor(load_path, device)
-                torch.save(t, filepath)
+        else:
+            raise KeyError("Metadata CSV must contain either a 'file_name' (legacy) or 'object_id' (new) column.")
 
-        # If instead the files are loaded, preload the tensors!
-        n = len(self.filenames)
-        logging.info("Preloading PyTorch tensors before transfer...")
-        filepaths = [fl.replace('/', '_') if '/' in fl else fl for fl in self.filenames]  # Flatten
-        load_fn = partial(load_tensor, tensors_path=self.tensors_path, as_numpy=True)
+        # Preload the tensors!
+        n = len(self.tensor_filepaths)
+        logging.info(f"Preloading {n} PyTorch tensors into memory...")
+
+        load_fn = partial(load_tensor, as_numpy=True)
 
         with mp.Pool(min(n_workers, mp.cpu_count())) as p:
-            # Load to NumPy, then convert to PyTorch (hack to solve system
-            # issue with multiprocessing + PyTorch tensors)
             self.observations = list(
-                tqdm(p.imap(load_fn, filepaths), total=n)
+                tqdm(p.imap(load_fn, self.tensor_filepaths), total=n)
             )
         self.observations = [torch.from_numpy(x) for x in self.observations]
 
-        logging.info("Initialization of FITS Dataset Completed.")
+        logging.info("Initialization of Dataset Completed.")
 
         self.sampler = None
         if dist.is_available() and dist.is_initialized():

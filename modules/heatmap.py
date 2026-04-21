@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import click
 import logging
+import os
 
 import torch
 import torch.nn as nn
@@ -8,6 +9,14 @@ import torch.nn as nn
 from tqdm import tqdm
 
 from data_preprocessing import FITSDataset, get_data_loader
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam import GuidedBackpropReLUModel
+from pytorch_grad_cam.utils.image import (
+    show_cam_on_image, deprocess_image, preprocess_image
+)
+from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget, ClassifierOutputReST
+
+
 import kornia.augmentation as K
 
 from cnn import model_factory
@@ -19,7 +28,7 @@ from utils import (
 )
 
 
-def predict(
+def heatmap(
     model_path,
     dataset,
     cutout_size,
@@ -76,39 +85,29 @@ def predict(
         shuffle=False,
     )
 
-    logging.info("Performing predictions...")
-    yh = []
-    model.eval()
+    # Acquiring GradCAM layer
+    # Acquiring GradCAM layer
+    targets = None  # None defaults to the highest scoring class
 
-    # Enable Monte Carlo dropout if requested
-    if mc_dropout:
-        logging.info("Activating Monte Carlo dropout...")
-        enable_dropout(model)
+    # NOTE: You may need to change model.layer4 to model.module.layer4 if using DataParallel
+    target_layers = [model.module.layer4] if parallel else [model.layer4]
 
-    with torch.no_grad():
+    os.makedirs(output_path, exist_ok=True)
+    global_img_idx = 0
+    logging.info("Performing heatmap creation...")
+
+    with GradCAM(model=model, target_layers=target_layers) as cam:
+        cam.batch_size = 32
         for data in tqdm(loader):
             X, _ = data
             X = X.to(device)
-            outputs = model(X)
-            if apply_softmax:
-                outputs = nn.functional.softmax(outputs, dim=1)
-            yh.append(outputs)
 
-    yh = torch.cat(yh)
+            grayscale_cam = cam(input_tensor=data, targets=targets)
 
-    values, indices = torch.topk(yh, 2, dim=1)
 
-    # Get the highest predicted confidence and label
-    predicted_confs, predicted_labels = torch.max(yh, 1)
 
-    # Get the second highest predicted confidence and label
-    second_predicted_confs = values[:, 1]
-    second_predicted_labels = indices[:, 1]
 
-    return (predicted_labels.cpu().numpy(),
-            predicted_confs.cpu().numpy(),
-            second_predicted_labels.cpu().numpy(),
-            second_predicted_confs.cpu().numpy())
+
 
 
 @click.command()
@@ -232,7 +231,7 @@ def main(
 ):
 
     logging.info(
-        """Performing pure inference without labels. Using
+        """Creating full heatmaps. Using
             column names to infer number of expected outputs.
             Split and Slug values entered will be ignored and
             info.csv will be used."""
@@ -266,10 +265,10 @@ def main(
 
     for run_num in range(ini_run_num, n_runs + ini_run_num):
 
-        logging.info(f"Running inference run {run_num}")
+        logging.info(f"Running heatmap run {run_num}")
 
         # Make predictions
-        preds, cis, spreds, scis = predict(
+        heatmap(
             model_path,
             dataset,
             cutout_size,
@@ -282,18 +281,6 @@ def main(
             mc_dropout=mc_dropout,
             dropout_rate=dropout_rate,
         )
-
-        # Write a CSV of predictions
-        catalog = load_data_dir(data_dir, slug, split)
-        catalog["predicted_labels"] = preds
-        catalog["predicted_confidence"] = cis  # Writing probabilities.
-
-        catalog["second_predicted_labels"] = spreds
-        catalog["second_predicted_confidence"] = scis  # Writing probabilities.
-
-        cat_path = output_path + f"inf_{run_num}.csv"
-        logging.info(f"Catalog saved to {cat_path}")
-        catalog.to_csv(cat_path, index=False)
 
 
 
