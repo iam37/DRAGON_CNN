@@ -6,19 +6,64 @@ from ignite.engine import (
     create_supervised_evaluator,
 )
 from ignite.metrics import Loss, Accuracy, Precision, ConfusionMatrix, Recall, Fbeta
+from ignite.handlers import ModelCheckpoint
+from ignite.contrib.handlers import ProgressBar
 from ignite.contrib.handlers.param_scheduler import LRScheduler
 import logging
 
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-def create_trainer(model, optimizer, criterion, loaders, device, use_scheduler=True):
-    """Set up Ignite trainer and evaluator."""
+from utils import arsinh_normalize
+
+
+def create_trainer(model, optimizer, criterion, loaders, device, use_scheduler=True, gpu_transforms=None,
+                   normalize=False, checkpoint_dir=None, run_id=None, num_epochs=32):
+    """Set up Ignite trainer and evaluator with GPU transforms."""
+
+
+    # 1. Define the custom batch preparation function
+    def custom_prepare_batch(batch, device, non_blocking):
+        x, y = batch
+
+        # Move the raw batch to the GPU first
+        x = x.to(device, non_blocking=non_blocking)
+        y = y.to(device, non_blocking=non_blocking)
+
+        # Apply transformations on the GPU to the whole batch (B, C, H, W)
+        if gpu_transforms is not None:
+            if hasattr(gpu_transforms, "__len__"):
+                for transform in gpu_transforms:
+                    x = transform(x)
+            else:
+                x = gpu_transforms(x)
+
+        # Apply normalization on the GPU
+        if normalize:
+            x = arsinh_normalize(x)  # Ensure this function supports batched tensors!
+
+        return x, y
+
+    # Define a score function.
+    # If using Accuracy (higher is better):
+    def score_function(engine):
+        return engine.state.metrics['accuracy']
+
+    # 2. Pass the custom function to the trainer
     trainer = create_supervised_trainer(
-        model, optimizer, criterion, device=device
+        model, optimizer, criterion, device=device,
+        prepare_batch=custom_prepare_batch,
+        amp_mode="amp"
     )
 
+    pbar = ProgressBar(persist=False)
+
+    # Attach it to the trainer.
+    pbar.attach(trainer, output_transform=lambda x: {'batch_loss': x})
+
     if use_scheduler:
-        torch_lr_scheduler = CosineAnnealingLR(optimizer, T_max=20)
+        num_training_steps = len(loaders['train']) * num_epochs
+
+        torch_lr_scheduler = CosineAnnealingLR(optimizer, T_max=num_training_steps)
         scheduler = LRScheduler(torch_lr_scheduler)
 
     metrics = {
@@ -31,8 +76,24 @@ def create_trainer(model, optimizer, criterion, loaders, device, use_scheduler=T
     }
 
     evaluator = create_supervised_evaluator(
-        model, metrics=metrics, device=device
+        model, metrics=metrics, device=device,
+        prepare_batch=custom_prepare_batch,
+        amp_mode="amp"
     )
+
+    # Define the checkpoint handler
+    checkpoint_handler = ModelCheckpoint(
+        dirname=checkpoint_dir,
+        filename_prefix=f'best_{run_id}',
+        n_saved=1,
+        require_empty=False,
+        score_function=score_function,
+        score_name="accuracy",
+        global_step_transform=lambda engine, event: engine.state.epoch
+    )
+
+    pbar_eval = ProgressBar(persist=False, desc="Evaluating")
+    pbar_eval.attach(evaluator)
 
     # Function to log metrics to wandb
     def log_metrics(trainer, loader, log_prefix=""):
@@ -65,6 +126,10 @@ def create_trainer(model, optimizer, criterion, loaders, device, use_scheduler=T
         log_dict[f"{log_prefix}confusion_matrix"] = cm_plot
         wandb.log(log_dict)
 
+        # Only save if this is the validation set
+        if log_prefix == "devel_" and checkpoint_handler is not None:
+            checkpoint_handler(evaluator, to_save={'model': model})
+
     def get_current_lr(optimizer):
         return optimizer.param_groups[0]['lr']
 
@@ -83,12 +148,6 @@ def create_trainer(model, optimizer, criterion, loaders, device, use_scheduler=T
         for L, loader in loaders.items():
             log_metrics(trainer, loader, log_prefix=f"{L}_")
         wandb.log({"lr": get_current_lr(optimizer)})
-
-    @trainer.on(Events.ITERATION_COMPLETED)
-    def clip_gradients(engine):
-        for param in model.parameters():
-            if param.grad is not None:
-                param.grad.data.clamp_(-1, 1)
 
     @trainer.on(Events.COMPLETED)
     def log_results_end(trainer):

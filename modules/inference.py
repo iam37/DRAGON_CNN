@@ -54,19 +54,19 @@ def predict(
         model_args["dropout"] = "True"
 
     model = cls(**model_args)
-    model = nn.DataParallel(model) if parallel else model
-    model = model.to(device)
-
-    # Changing the dropout rate if specified
-    if dropout_rate is not None:
-        specify_dropout_rate(model, dropout_rate)
-
     # Load the model
     logging.info("Loading model...")
     if device == "cpu":
         model.load_state_dict(torch.load(model_path, map_location="cpu"))
     else:
         model.load_state_dict(torch.load(model_path))
+
+    model = nn.DataParallel(model) if parallel else model
+    model = model.to(device)
+
+    # Changing the dropout rate if specified
+    if dropout_rate is not None:
+        specify_dropout_rate(model, dropout_rate)
 
     # Create a data_preprocessing loader
     loader = get_data_loader(

@@ -42,8 +42,6 @@ sweep_config = {
     }
 }
 
-import random
-import numpy as np
 
 def initialize_and_run_agent(device, p_args):
     if device is not None:

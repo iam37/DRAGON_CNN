@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
+
 import click
 import logging
 from functools import partial
@@ -259,11 +261,27 @@ def train(**kwargs):
         args = {**args, **model_stats(model)}
         run.log(args)
 
+        # Making an output directory for checkpoints
+        checkpoint_dir = Path("checkpoints")
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
         # Set up trainer
         if args["train"]:
             logging.info("Creating trainer...")
+            # Register a hook to automatically clamp gradients during the backward pass
+            for param in model.parameters():
+                param.register_hook(lambda grad: torch.clamp(grad, -1, 1))
+
             trainer = create_trainer(
-                model, optimizer, criterion, loaders, args["device"], args["scheduler"]
+                model,
+                optimizer,
+                criterion,
+                loaders,
+                args["device"],
+                args["scheduler"],
+                checkpoint_dir=checkpoint_dir,
+                run_id=run.id,
+                num_epochs=args["epochs"]
             )
         else:
             logging.info("Creating trainer and freezing layers for transfer learning...")

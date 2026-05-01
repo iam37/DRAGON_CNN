@@ -62,6 +62,9 @@ def main(data_dir, target_metric, info_name):
     splits_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(data_dir / info_name)
+    df['h5_index'] = np.arange(len(df))
+
+    # Now it is safe to shuffle and balance, because the h5_index travels with the row
     df = df.sample(frac=1, random_state=0)
 
     for split_type in split_types.keys():

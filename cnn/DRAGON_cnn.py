@@ -69,6 +69,9 @@ class DRAGON(nn.Module):
 
     def forward(self, x):
         # Forward pass through the layers
+        if x.dim() == 5 and x.size(1) == 1:
+            x = x.squeeze(1)
+
         out = self.layer1(x)
         out = self.layer2(out)
         out = self.layer3(out)

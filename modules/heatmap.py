@@ -9,13 +9,8 @@ import torch.nn as nn
 from tqdm import tqdm
 
 from data_preprocessing import FITSDataset, get_data_loader
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam import GuidedBackpropReLUModel
-from pytorch_grad_cam.utils.image import (
-    show_cam_on_image, deprocess_image, preprocess_image
-)
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget, ClassifierOutputReST
-
+from pytorch_grad_cam import GradCAM, EigenGradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
 
 import kornia.augmentation as K
 
@@ -24,23 +19,25 @@ from utils import (
     discover_devices,
     enable_dropout,
     specify_dropout_rate,
-    load_data_dir
 )
+
+import cv2
 
 
 def heatmap(
-    model_path,
-    dataset,
-    cutout_size,
-    channels,
-    parallel=False,
-    batch_size=256,
-    n_workers=1,
-    num_classes=6,
-    model_type="dragon",
-    mc_dropout=False,
-    dropout_rate=None,
-    apply_softmax=True
+        model_path,
+        output_path,
+        dataset,
+        cutout_size,
+        channels,
+        parallel=False,
+        batch_size=256,
+        n_workers=1,
+        num_classes=6,
+        model_type="dragon",
+        mc_dropout=False,
+        dropout_rate=None,
+        apply_softmax=True
 ):
     """Using the model defined in model path, return the output values for
     the given set of images"""
@@ -63,12 +60,6 @@ def heatmap(
         model_args["dropout"] = "True"
 
     model = cls(**model_args)
-    model = nn.DataParallel(model) if parallel else model
-    model = model.to(device)
-
-    # Changing the dropout rate if specified
-    if dropout_rate is not None:
-        specify_dropout_rate(model, dropout_rate)
 
     # Load the model
     logging.info("Loading model...")
@@ -76,6 +67,21 @@ def heatmap(
         model.load_state_dict(torch.load(model_path, map_location="cpu"))
     else:
         model.load_state_dict(torch.load(model_path))
+
+
+    model = nn.DataParallel(model) if parallel else model
+    model = model.to(device)
+
+    # Changing the dropout rate if specified
+    if dropout_rate is not None:
+        specify_dropout_rate(model, dropout_rate)
+
+    # Set to evaluation mode
+    model.eval()
+
+    # If using Monte Carlo dropout, re-enable dropout layers
+    if mc_dropout:
+        enable_dropout(model)
 
     # Create a data_preprocessing loader
     loader = get_data_loader(
@@ -86,26 +92,50 @@ def heatmap(
     )
 
     # Acquiring GradCAM layer
-    # Acquiring GradCAM layer
     targets = None  # None defaults to the highest scoring class
-
-    # NOTE: You may need to change model.layer4 to model.module.layer4 if using DataParallel
     target_layers = [model.module.layer4] if parallel else [model.layer4]
 
     os.makedirs(output_path, exist_ok=True)
     global_img_idx = 0
     logging.info("Performing heatmap creation...")
 
-    with GradCAM(model=model, target_layers=target_layers) as cam:
-        cam.batch_size = 32
+    with EigenGradCAM(model=model, target_layers=target_layers) as cam:
+        cam.batch_size = batch_size
+
         for data in tqdm(loader):
             X, _ = data
             X = X.to(device)
 
-            grayscale_cam = cam(input_tensor=data, targets=targets)
+            grayscale_cam = cam(input_tensor=X, targets=targets)
 
+            # Overlay and save the heatmaps
+            for i in range(X.size(0)):
+                # Bring the image tensor back to CPU and convert to numpy
+                img_tensor = X[i].cpu().numpy()
 
+                # Handle 3-channel (RGB) vs 1-channel (Grayscale fallback)
+                if channels == 3:
+                    # Permute from CHW to HWC
+                    img_bg = img_tensor.transpose(1, 2, 0)
 
+                    # Basic Min-Max normalization for standard RGB
+                    # (Note: For true Lupton RGB, you would use astropy.visualization.make_lupton_rgb here)
+                    img_normalized = (img_bg - img_bg.min()) / (img_bg.max() - img_bg.min() + 1e-8)
+                else:
+                    # Extract just the first channel (Channel 0)
+                    img_bg = img_tensor[0, :, :]
+                    img_normalized = (img_bg - img_bg.min()) / (img_bg.max() - img_bg.min() + 1e-8)
+                    # Convert single channel to 3-channel grayscale so show_cam_on_image can overlay
+                    img_normalized = cv2.cvtColor(img_normalized, cv2.COLOR_GRAY2RGB)
+
+                # Create the overlay
+                cam_image = show_cam_on_image(img_normalized, grayscale_cam[i, :], use_rgb=True)
+
+                # Save the image (converting RGB back to BGR for OpenCV)
+                save_file = os.path.join(output_path, f"heatmap_{global_img_idx:05d}.png")
+                cv2.imwrite(save_file, cv2.cvtColor(cam_image, cv2.COLOR_RGB2BGR))
+
+                global_img_idx += 1
 
 
 
@@ -270,6 +300,7 @@ def main(
         # Make predictions
         heatmap(
             model_path,
+            output_path,
             dataset,
             cutout_size,
             channels,

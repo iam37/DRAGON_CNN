@@ -8,9 +8,11 @@ pandas
 matplotlib
 kornia
 tqdm
+grad-cam
 click
 scikit-learn
 wandb
+h5py
 lightning
 pytorch-ignite
 scipy
